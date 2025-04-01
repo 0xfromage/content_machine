@@ -8,6 +8,7 @@ import time
 import tempfile
 from PIL import Image
 from io import BytesIO
+from datetime import datetime
 
 # Conditional MoviePy import with fallback
 try:
@@ -503,7 +504,7 @@ class VideoFinder:
                     existing_media.width = media_data["width"]
                     existing_media.height = media_data["height"]
                     existing_media.keywords = media_data["keywords"]
-                    existing_media.updated_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                    existing_media.updated_at = datetime.now()
                 else:
                     # Mettre à jour le statut du contenu traité
                     processed_content = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()

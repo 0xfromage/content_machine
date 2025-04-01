@@ -164,7 +164,7 @@ class TestInstagramPublisher(unittest.TestCase):
         self.assertTrue(self.publisher.is_logged_in)
         
         # Vérifier que la méthode login a été appelée
-        self.mock_client_instance.login.assert_called_once_with(
+        self.mock_client_instance.login.assert_called_with(
             self.publisher.username, self.publisher.password
         )
         

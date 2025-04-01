@@ -1,4 +1,3 @@
-# tests/test_integration.py
 import unittest
 import os
 import sys
@@ -112,17 +111,24 @@ class IntegrationTestSuite(unittest.TestCase):
         """
         Test database interactions throughout the workflow
         """
-        from database.models import RedditPost, Session
+        import uuid
+        unique_id = f"test_{uuid.uuid4().hex[:8]}"
+        from database.models import RedditPost, Session, ProcessedContent, MediaContent
+        
+        # Clean up any existing data with this ID
         with Session() as session:
-            session.query(RedditPost).filter_by(reddit_id='abcd123').delete()
+            session.query(RedditPost).filter_by(reddit_id=unique_id).delete()
+            session.query(ProcessedContent).filter_by(reddit_id=unique_id).delete()
+            session.query(MediaContent).filter_by(reddit_id=unique_id).delete()
             session.commit()
-        # Use first sample post
+        
+        # Use first sample post as template but with unique ID
         sample_post = self.sample_posts[0]
         
         with Session() as session:
-            # 1. Create Reddit Post
+            # 1. Create Reddit Post with unique ID
             reddit_post = RedditPost(
-                reddit_id=sample_post['reddit_id'],
+                reddit_id=unique_id,  # Use unique ID here
                 title=sample_post['title'],
                 content=sample_post['content'],
                 subreddit=sample_post['subreddit'],
@@ -131,18 +137,18 @@ class IntegrationTestSuite(unittest.TestCase):
             session.add(reddit_post)
             session.commit()
             
-            # 2. Create Processed Content
+            # 2. Create Processed Content with same unique ID
             processed_content = ProcessedContent(
-                reddit_id=sample_post['reddit_id'],
+                reddit_id=unique_id,  # Use unique ID here
                 instagram_caption="Test Instagram Caption",
                 tiktok_caption="Test TikTok Caption",
                 status='pending_validation'
             )
             session.add(processed_content)
             
-            # 3. Create Media Content
+            # 3. Create Media Content with same unique ID
             media_content = MediaContent(
-                reddit_id=sample_post['reddit_id'],
+                reddit_id=unique_id,  # Use unique ID here
                 media_type='image',
                 file_path='/path/to/test/image.jpg'
             )
@@ -150,8 +156,8 @@ class IntegrationTestSuite(unittest.TestCase):
             
             session.commit()
             
-            # Verify relations
-            saved_post = session.query(RedditPost).filter_by(reddit_id=sample_post['reddit_id']).first()
+            # Verify relations using unique ID
+            saved_post = session.query(RedditPost).filter_by(reddit_id=unique_id).first()
             self.assertIsNotNone(saved_post)
             self.assertEqual(saved_post.processed_content.instagram_caption, "Test Instagram Caption")
             self.assertEqual(saved_post.media_content.media_type, 'image')

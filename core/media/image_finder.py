@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Optional
 from PIL import Image
 from io import BytesIO
 import time
+from datetime import datetime
 
 from config.settings import config
 from utils.error_handler import handle_media_error
@@ -122,7 +123,8 @@ class ImageFinder:
             params = {
                 "query": query,
                 "per_page": 10,
-                "orientation": "square"
+                # Valid values are 'landscape', 'portrait', 'squarish'
+                "orientation": "squarish" 
             }
             
             logger.debug(f"Sending request to Unsplash API: {url}")
@@ -463,7 +465,7 @@ class ImageFinder:
                     existing_media.width = media_data["width"]
                     existing_media.height = media_data["height"]
                     existing_media.keywords = media_data["keywords"]
-                    existing_media.updated_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                    existing_media.updated_at = datetime.now()
                 else:
                     # Mettre à jour le statut du contenu traité
                     processed_content = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()
