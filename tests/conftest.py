@@ -242,3 +242,33 @@ def mock_claude_client(monkeypatch):
     monkeypatch.setattr(utils.claude_client, "ClaudeClient", lambda: mock_client)
     
     return mock_client
+
+@pytest.fixture(scope="function")
+def robust_test_image_path():
+    """Create a test image that will definitely work with image processing libraries."""
+    try:
+        from PIL import Image
+        import tempfile
+        import os
+        
+        # Create a temporary directory that will persist
+        temp_dir = tempfile.mkdtemp()
+        
+        # Create a path for our test image
+        image_path = os.path.join(temp_dir, "test_image.jpg")
+        
+        # Create a simple, reliable test image
+        image = Image.new('RGB', (100, 100), color=(73, 109, 137))
+        image.save(image_path)
+        
+        yield image_path
+        
+        # Clean up after the test
+        try:
+            os.remove(image_path)
+            os.rmdir(temp_dir)
+        except:
+            pass
+    except ImportError:
+        # Fall back to a static path in resources if PIL is not available
+        yield "resources/default.jpg"

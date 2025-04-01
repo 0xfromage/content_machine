@@ -41,12 +41,20 @@ class InstagramPublisher:
             if os.path.exists(session_file):
                 # Charger la session existante
                 self.client.load_settings(session_file)
-                self.client.get_timeline_feed()  # Tester si la session est valide
-                self.is_logged_in = True
-                logger.info(f"Instagram session loaded for {self.username}")
-                return True
+                try:
+                    # Tester si la session est valide
+                    self.client.get_timeline_feed()
+                    self.is_logged_in = True
+                    logger.info(f"Instagram session loaded for {self.username}")
+                    return True
+                except LoginRequired:
+                    # La session a expiré, on la supprimera et on se reconnectera
+                    logger.info("Session expired, will try to re-login")
+                    os.remove(session_file)
+                    # Will continue to the login code below
             
             # Se connecter avec les identifiants
+            logger.info(f"Logging in to Instagram as {self.username}")
             self.client.login(self.username, self.password)
             
             # Sauvegarder la session pour une utilisation future
@@ -56,22 +64,11 @@ class InstagramPublisher:
             logger.info(f"Successfully logged in to Instagram as {self.username}")
             return True
             
-        except LoginRequired:
-            # La session a expiré, essayer de se reconnecter
-            try:
-                if os.path.exists(session_file):
-                    os.remove(session_file)  # Supprimer la session invalide
-                
-                self.client.login(self.username, self.password)
-                self.client.dump_settings(session_file)
-                self.is_logged_in = True
-                logger.info(f"Re-logged in to Instagram as {self.username}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to re-login to Instagram: {str(e)}")
-                self.is_logged_in = False
-                return False
-                
+        except LoginRequired as e:
+            logger.error(f"Login required error: {str(e)}")
+            self.is_logged_in = False
+            return False
+                    
         except Exception as e:
             logger.error(f"Failed to login to Instagram: {str(e)}")
             self.is_logged_in = False

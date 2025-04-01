@@ -262,22 +262,35 @@ class TextProcessor:
         """
         try:
             with Session() as session:
-                # Mettre à jour le statut du post Reddit
-                reddit_post = session.query(RedditPost).filter_by(reddit_id=reddit_id).first()
-                if reddit_post:
-                    reddit_post.status = 'processed'
+                # Vérifier si un contenu traité existe déjà pour ce post
+                existing_content = session.query(ProcessedContent).filter_by(reddit_id=reddit_id).first()
                 
-                # Créer une nouvelle entrée pour le contenu traité
-                processed_content = ProcessedContent(
-                    reddit_id=reddit_id,
-                    keywords=','.join(processed_data['keywords']),
-                    hashtags=','.join(processed_data['hashtags']),
-                    instagram_caption=processed_data['instagram_caption'],
-                    tiktok_caption=processed_data['tiktok_caption'],
-                    status='pending_validation'  # En attente de validation humaine
-                )
+                if existing_content:
+                    # Mettre à jour le contenu existant
+                    logger.info(f"Updating existing processed content for post {reddit_id}")
+                    existing_content.keywords = ','.join(processed_data['keywords'])
+                    existing_content.hashtags = ','.join(processed_data['hashtags'])
+                    existing_content.instagram_caption = processed_data['instagram_caption']
+                    existing_content.tiktok_caption = processed_data['tiktok_caption']
+                    existing_content.updated_at = datetime.now()
+                else:
+                    # Mettre à jour le statut du post Reddit
+                    reddit_post = session.query(RedditPost).filter_by(reddit_id=reddit_id).first()
+                    if reddit_post:
+                        reddit_post.status = 'processed'
+                    
+                    # Créer une nouvelle entrée pour le contenu traité
+                    processed_content = ProcessedContent(
+                        reddit_id=reddit_id,
+                        keywords=','.join(processed_data['keywords']),
+                        hashtags=','.join(processed_data['hashtags']),
+                        instagram_caption=processed_data['instagram_caption'],
+                        tiktok_caption=processed_data['tiktok_caption'],
+                        status='pending_validation'  # En attente de validation humaine
+                    )
+                    
+                    session.add(processed_content)
                 
-                session.add(processed_content)
                 session.commit()
                 
         except Exception as e:
