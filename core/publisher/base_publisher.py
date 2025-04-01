@@ -92,7 +92,7 @@ class BasePublisher(ABC):
                     self._log_publish_attempt(
                         post_id=post_id,
                         success=True,
-                        post_id=result.get('post_id'),
+                        platform_post_id=result.get('post_id'),
                         post_url=result.get('post_url')
                     )
                     
@@ -125,7 +125,7 @@ class BasePublisher(ABC):
                 time.sleep(self.retry_delay * attempt)  # Augmenter le délai à chaque tentative
     
     def _log_publish_attempt(self, post_id: str, success: bool, error_message: str = None, 
-                           post_id: str = None, post_url: str = None) -> None:
+                           platform_post_id: str = None, post_url: str = None) -> None:
         """
         Enregistrer une tentative de publication dans la base de données.
         
@@ -133,7 +133,7 @@ class BasePublisher(ABC):
             post_id: ID du post Reddit.
             success: Si la publication a réussi.
             error_message: Message d'erreur éventuel.
-            post_id: ID du post sur la plateforme.
+            platform_post_id: ID du post sur la plateforme.
             post_url: URL du post publié.
         """
         try:
@@ -143,7 +143,7 @@ class BasePublisher(ABC):
                     platform=self.platform_name,
                     success=success,
                     error_message=error_message,
-                    post_id=post_id,
+                    post_id=platform_post_id,
                     post_url=post_url,
                     published_at=datetime.now()
                 )

@@ -1,7 +1,7 @@
 # database/database.py
 import logging
 import os
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, Integer, func
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.exc import SQLAlchemyError
 from contextlib import contextmanager
@@ -236,8 +236,6 @@ class DatabaseManager:
                 stats['publish_logs'] = session.query(PublishLog).count()
                 
                 # Statistiques par statut
-                from sqlalchemy import func
-                
                 post_status = session.query(
                     RedditPost.status, 
                     func.count(RedditPost.id)
@@ -255,7 +253,7 @@ class DatabaseManager:
                 # Statistiques de publication
                 publish_success = session.query(
                     PublishLog.platform,
-                    func.sum(func.cast(PublishLog.success, sqlalchemy.Integer))
+                    func.sum(func.cast(PublishLog.success, Integer))
                 ).group_by(PublishLog.platform).all()
                 
                 stats['publish_success'] = {platform: int(count) for platform, count in publish_success}

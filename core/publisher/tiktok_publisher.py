@@ -57,11 +57,11 @@ class TikTokPublisher:
             
             # Pour l'instant, nous simulons la publication
             # Dans une implémentation réelle, utiliser l'API TikTok ici
-            success, post_id_or_error = self._simulate_tiktok_upload(video_path, caption)
+            success, platform_post_id_or_error = self._simulate_tiktok_upload(video_path, caption)
             
             if success:
                 # Simuler un ID et une URL de post
-                tiktok_post_id = post_id_or_error
+                tiktok_post_id = platform_post_id_or_error
                 tiktok_post_url = f"https://www.tiktok.com/@{self.username}/video/{tiktok_post_id}"
                 
                 # Logger la publication réussie
@@ -70,7 +70,7 @@ class TikTokPublisher:
                     post_id=post_id,
                     platform="tiktok",
                     success=True,
-                    post_id=tiktok_post_id,
+                    platform_post_id=tiktok_post_id,
                     post_url=tiktok_post_url
                 )
                 
@@ -80,7 +80,7 @@ class TikTokPublisher:
                     "post_url": tiktok_post_url
                 }
             else:
-                error_msg = post_id_or_error
+                error_msg = platform_post_id_or_error
                 logger.error(f"TikTok upload failed: {error_msg}")
                 self._log_publish_attempt(post_id, "tiktok", False, error_msg)
                 return {"success": False, "error": error_msg}
@@ -186,7 +186,7 @@ class TikTokPublisher:
             return False, random.choice(possible_errors)
             
     def _log_publish_attempt(self, post_id: str, platform: str, success: bool, 
-                            error_message: str = None, post_id: str = None, 
+                            error_message: str = None, platform_post_id: str = None, 
                             post_url: str = None) -> None:
         """
         Enregistrer une tentative de publication dans la base de données.
@@ -196,7 +196,7 @@ class TikTokPublisher:
             platform: Plateforme (tiktok).
             success: Si la publication a réussi.
             error_message: Message d'erreur éventuel.
-            post_id: ID du post sur la plateforme.
+            platform_post_id: ID du post sur la plateforme.
             post_url: URL du post publié.
         """
         try:
@@ -206,7 +206,7 @@ class TikTokPublisher:
                     platform=platform,
                     success=success,
                     error_message=error_message,
-                    post_id=post_id,
+                    post_id=platform_post_id,
                     post_url=post_url,
                     published_at=datetime.now()
                 )
@@ -217,7 +217,7 @@ class TikTokPublisher:
                     processed_content = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()
                     if processed_content:
                         processed_content.published_tiktok = True
-                        processed_content.tiktok_post_id = post_id
+                        processed_content.tiktok_post_id = platform_post_id
                         processed_content.status = 'published'
                 
                 session.commit()

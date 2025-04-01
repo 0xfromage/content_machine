@@ -659,40 +659,78 @@ class ContentValidatorApp:
         """
         env_path = ".env"
         
-        # Lire le fichier .env existant
-        if os.path.exists(env_path):
-            with open(env_path, "r") as file:
-                lines = file.readlines()
-        else:
-            lines = []
-        
-        # Mettre à jour les valeurs existantes ou ajouter de nouvelles valeurs
-        updated_lines = []
-        updated_keys = set()
-        
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                updated_lines.append(line)
-                continue
-                
-            key, value = line.split("=", 1)
-            key = key.strip()
-            
-            if key in new_values:
-                updated_lines.append(f"{key}={new_values[key]}")
-                updated_keys.add(key)
+        # Vérifier si le fichier .env existe
+        if not os.path.exists(env_path):
+            logger.warning(f"Le fichier {env_path} n'existe pas. Création d'un nouveau fichier.")
+            # Créer le fichier à partir du modèle .env.example s'il existe
+            if os.path.exists(".env.example"):
+                import shutil
+                shutil.copy(".env.example", env_path)
+                logger.info(f"Fichier {env_path} créé à partir de .env.example")
             else:
-                updated_lines.append(line)
+                # Créer un fichier vide
+                with open(env_path, "w") as file:
+                    file.write("# Fichier d'environnement Content Machine\n")
         
-        # Ajouter les nouvelles valeurs qui n'existaient pas
-        for key, value in new_values.items():
-            if key not in updated_keys:
-                updated_lines.append(f"{key}={value}")
-        
-        # Écrire le fichier mis à jour
-        with open(env_path, "w") as file:
-            file.write("\n".join(updated_lines) + "\n")
+        try:
+            # Lire le fichier .env existant
+            with open(env_path, "r", encoding="utf-8") as file:
+                lines = file.readlines()
+            
+            # Créer un dictionnaire pour stocker les valeurs existantes
+            existing_values = {}
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    try:
+                        key, value = line.split("=", 1)
+                        existing_values[key.strip()] = value.strip()
+                    except ValueError:
+                        # Ignorer les lignes mal formatées
+                        logger.warning(f"Ligne mal formatée ignorée: {line}")
+            
+            # Mettre à jour les valeurs
+            existing_values.update(new_values)
+            
+            # Recréer le fichier .env avec les commentaires préservés et les valeurs mises à jour
+            updated_lines = []
+            processed_keys = set()
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    updated_lines.append(line)
+                    continue
+                
+                try:
+                    key, _ = line.split("=", 1)
+                    key = key.strip()
+                    
+                    if key in existing_values:
+                        updated_lines.append(f"{key}={existing_values[key]}")
+                        processed_keys.add(key)
+                    else:
+                        # Conserver la ligne originale si la clé n'est pas à mettre à jour
+                        updated_lines.append(line)
+                except ValueError:
+                    # Conserver les lignes mal formatées
+                    updated_lines.append(line)
+            
+            # Ajouter les nouvelles valeurs qui n'existaient pas
+            for key, value in existing_values.items():
+                if key not in processed_keys:
+                    updated_lines.append(f"{key}={value}")
+            
+            # Écrire le fichier mis à jour
+            with open(env_path, "w", encoding="utf-8") as file:
+                file.write("\n".join(updated_lines) + "\n")
+            
+            logger.info(f"Fichier {env_path} mis à jour avec succès")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la mise à jour du fichier {env_path}: {str(e)}")
+            raise
 
 
 # Point d'entrée pour Streamlit
