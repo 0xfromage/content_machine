@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
 
 # Charger les variables d'environnement depuis le fichier .env
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,7 +39,9 @@ class RedditConfig:
 @dataclass
 class MediaConfig:
     """Configuration pour la recherche de médias."""
-    unsplash_api_key: str = os.getenv("UNSPLASH_API_KEY", "")
+    unsplash_access_key: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
+    unsplash_secret_key: str = os.getenv("UNSPLASH_SECRET_KEY", "")
+    unsplash_app_id: str = os.getenv("UNSPLASH_APP_ID", "")
     pexels_api_key: str = os.getenv("PEXELS_API_KEY", "")
     pixabay_api_key: str = os.getenv("PIXABAY_API_KEY", "")
     image_width: int = 1080
@@ -91,12 +94,12 @@ class AppConfig:
     web_interface_port: int = int(os.getenv("WEB_INTERFACE_PORT", "8501"))
     auto_publish: bool = os.getenv("AUTO_PUBLISH", "False").lower() == "true"
     
-    # Sous-configurations
-    reddit: RedditConfig = RedditConfig()
-    media: MediaConfig = MediaConfig()
-    instagram: InstagramConfig = InstagramConfig()
-    tiktok: TikTokConfig = TikTokConfig()
-    database: DatabaseConfig = DatabaseConfig()
+    # Use default_factory instead of direct instantiation
+    reddit: RedditConfig = field(default_factory=RedditConfig)
+    media: MediaConfig = field(default_factory=MediaConfig)
+    instagram: InstagramConfig = field(default_factory=InstagramConfig)
+    tiktok: TikTokConfig = field(default_factory=TikTokConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
 
 # Instance unique de configuration à utiliser dans toute l'application
 config = AppConfig()

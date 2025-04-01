@@ -92,7 +92,7 @@ class ImageFinder:
         """
         try:
             url = "https://api.unsplash.com/search/photos"
-            headers = {"Authorization": f"Client-ID {self.unsplash_api_key}"}
+            headers = {"Authorization": f"Client-ID {self.unsplash_access_key}"}
             params = {
                 "query": query,
                 "per_page": 10,

@@ -18,14 +18,18 @@ class ClaudeClient:
         """Initialiser le client Claude avec la clé API."""
         try:
             self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
+            
+            # More detailed logging
             if not self.api_key:
-                logger.warning("Clé API Anthropic non configurée. Les fonctionnalités d'IA seront limitées.")
+                logger.error("CRITICAL: No Anthropic API key found. Set ANTHROPIC_API_KEY in .env")
+                raise ValueError("No Anthropic API key found")
             
             self.client = anthropic.Anthropic(api_key=self.api_key)
             self.model = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+            
             logger.info(f"Claude client initialized with model: {self.model}")
         except Exception as e:
-            logger.error(f"Error initializing Claude client: {str(e)}")
+            logger.error(f"Critical error initializing Claude client: {str(e)}")
             raise
     
     def generate_social_media_captions(self, post_data: Dict[str, Any], reddit_id: str) -> Dict[str, Any]:
@@ -229,42 +233,44 @@ class ClaudeClient:
     
     def _parse_caption_response(self, response: str) -> Dict[str, Any]:
         """
-        Parser la réponse JSON de Claude pour extraire les captions.
+        Parse the JSON response from Claude.
         
         Args:
-            response: Réponse JSON de Claude.
+            response: Response string from Claude.
             
         Returns:
-            Dictionnaire avec les captions parsées.
+            Parsed captions dictionary.
         """
         try:
-            # Extraire uniquement la partie JSON de la réponse
-            json_match = response.strip()
+            # Clean up the response
+            response = response.strip()
             
-            # Si la réponse est entourée de ```json et ```, les enlever
-            if json_match.startswith('```json'):
-                json_match = json_match.replace('```json', '', 1)
-                json_match = json_match.replace('```', '', 1)
+            # Remove code block markers if present
+            if response.startswith('```json'):
+                response = response.replace('```json', '').replace('```', '').strip()
             
-            # Parser le JSON
-            captions = json.loads(json_match.strip())
+            # Parse JSON
+            try:
+                captions = json.loads(response)
+            except json.JSONDecodeError:
+                # Fallback: try to extract JSON manually
+                import re
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    captions = json.loads(json_match.group(0))
+                else:
+                    logger.error(f"Could not parse Claude response: {response}")
+                    return self._fallback_caption_generation({})
             
             return {
                 'instagram_caption': captions.get('instagram_caption', ''),
                 'tiktok_caption': captions.get('tiktok_caption', ''),
                 'hashtags': captions.get('hashtags', [])
             }
-            
         except Exception as e:
             logger.error(f"Error parsing Claude caption response: {str(e)}")
             logger.debug(f"Raw response: {response}")
-            
-            # Retourner des valeurs par défaut en cas d'erreur
-            return {
-                'instagram_caption': '',
-                'tiktok_caption': '',
-                'hashtags': []
-            }
+            return self._fallback_caption_generation({})
     
     def _fallback_caption_generation(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
         """
