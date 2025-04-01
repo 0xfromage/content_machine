@@ -1,4 +1,4 @@
-.PHONY: setup test clean run web fixed-tests
+.PHONY: setup test clean run web fixed-tests test-setup
 
 # Directory setup
 SCRIPT_DIR = scripts
@@ -23,10 +23,13 @@ run:
 web:
 	streamlit run web_interface/app.py
 
-test:
+test-setup:
+	python tests/setup_test_env.py
+
+test: test-setup
 	python -m unittest discover tests
 
-fixed-tests:
+fixed-tests: test-setup
 	# Run individual tests that are likely to pass after fixes
 	python -m unittest tests.test_processor.TestTextProcessor.test_clean_text
 

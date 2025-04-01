@@ -7,6 +7,7 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
+from datetime import datetime
 
 from config.settings import config
 from utils.error_handler import handle_processing_error

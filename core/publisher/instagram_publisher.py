@@ -1,4 +1,3 @@
-# core/publisher/instagram_publisher.py
 import logging
 import time
 import os
@@ -23,6 +22,7 @@ class InstagramPublisher:
         self.access_token = config.instagram.access_token
         self.client = Client()
         self.is_logged_in = False
+        self.session_file = f"instagram_session_{self.username}.json"
         
         # Essayer de se connecter au démarrage si les identifiants sont disponibles
         if self.username and self.password:
@@ -37,10 +37,9 @@ class InstagramPublisher:
         """
         try:
             # Vérifier si un fichier de session existe
-            session_file = f"instagram_session_{self.username}.json"
-            if os.path.exists(session_file):
+            if os.path.exists(self.session_file):
                 # Charger la session existante
-                self.client.load_settings(session_file)
+                self.client.load_settings(self.session_file)
                 try:
                     # Tester si la session est valide
                     self.client.get_timeline_feed()
@@ -50,19 +49,24 @@ class InstagramPublisher:
                 except LoginRequired:
                     # La session a expiré, on la supprimera et on se reconnectera
                     logger.info("Session expired, will try to re-login")
-                    os.remove(session_file)
-                    # Will continue to the login code below
+                    if os.path.exists(self.session_file):
+                        os.remove(self.session_file)
             
             # Se connecter avec les identifiants
             logger.info(f"Logging in to Instagram as {self.username}")
-            self.client.login(self.username, self.password)
+            login_result = self.client.login(self.username, self.password)
             
-            # Sauvegarder la session pour une utilisation future
-            self.client.dump_settings(session_file)
-            
-            self.is_logged_in = True
-            logger.info(f"Successfully logged in to Instagram as {self.username}")
-            return True
+            if login_result:
+                # Sauvegarder la session pour une utilisation future
+                self.client.dump_settings(self.session_file)
+                
+                self.is_logged_in = True
+                logger.info(f"Successfully logged in to Instagram as {self.username}")
+                return True
+            else:
+                logger.error("Login returned False")
+                self.is_logged_in = False
+                return False
             
         except LoginRequired as e:
             logger.error(f"Login required error: {str(e)}")
@@ -73,7 +77,7 @@ class InstagramPublisher:
             logger.error(f"Failed to login to Instagram: {str(e)}")
             self.is_logged_in = False
             return False
-    
+        
     def publish(self, media_path: str, caption: str, post_id: str) -> Dict[str, Any]:
         """
         Publier une image sur Instagram.

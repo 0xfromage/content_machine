@@ -53,3 +53,7 @@ content_machine.db
 *.jpg
 *.png
 *.jpeg
+
+# NLTK
+
+nltk_data/

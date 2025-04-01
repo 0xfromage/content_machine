@@ -1,7 +1,6 @@
-# tests/conftest.py
+import pytest
 import os
 import sys
-import pytest
 import logging
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import test utilities
-from tests.utils.test_db import TestDatabase, TestDataGenerator, override_session_for_testing
+from tests.mocks import patch_external_dependencies
 
 # Configure logging for tests
 logging.basicConfig(
@@ -17,258 +16,120 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-@pytest.fixture(scope="session")
-def test_env():
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_environment():
     """
-    Set up the global test environment.
-    
-    This fixture should be used at the session level to set up and tear down
-    resources that are needed for the entire test session.
+    Set up the test environment automatically for all tests.
+    This fixture runs once at the beginning of the test session.
     """
-    # Store original environment variables
-    original_env = {}
-    for key in os.environ:
-        if key.startswith(('ANTHROPIC', 'UNSPLASH', 'PEXELS', 'PIXABAY', 'REDDIT', 'INSTAGRAM', 'TIKTOK')):
-            original_env[key] = os.environ[key]
+    # Run the setup script
+    from tests.setup_test_env import main as setup_env
+    setup_env()
     
-    # Ensure critical environment variables are set for tests
-    os.environ['ANTHROPIC_API_KEY'] = os.environ.get('ANTHROPIC_API_KEY', 'sk-ant-test-key')
-    os.environ['UNSPLASH_ACCESS_KEY'] = os.environ.get('UNSPLASH_ACCESS_KEY', 'test-access-key')
-    os.environ['PEXELS_API_KEY'] = os.environ.get('PEXELS_API_KEY', 'test-pexels-key')
-    os.environ['PIXABAY_API_KEY'] = os.environ.get('PIXABAY_API_KEY', 'test-pixabay-key')
+    # Set environment variables for tests
+    os.environ.setdefault('ANTHROPIC_API_KEY', 'test-api-key')
+    os.environ.setdefault('UNSPLASH_ACCESS_KEY', 'test-unsplash-key')
+    os.environ.setdefault('PEXELS_API_KEY', 'test-pexels-key')
+    os.environ.setdefault('PIXABAY_API_KEY', 'test-pixabay-key')
+    os.environ.setdefault('INSTAGRAM_USERNAME', 'test_instagram_user')
+    os.environ.setdefault('INSTAGRAM_PASSWORD', 'test_instagram_pass')
+    os.environ.setdefault('TIKTOK_USERNAME', 'test_tiktok_user')
+    os.environ.setdefault('TIKTOK_PASSWORD', 'test_tiktok_pass')
     
     # Set up a test database file path instead of using the main one
-    os.environ['DB_TYPE'] = 'sqlite'
-    os.environ['DB_NAME'] = ':memory:'  # Use in-memory database for tests
+    os.environ.setdefault('DB_TYPE', 'sqlite')
+    os.environ.setdefault('DB_NAME', ':memory:')  # Use in-memory database for tests
     
-    # Reload config to pick up test values
-    import importlib
-    import config.settings
-    importlib.reload(config.settings)
-    
-    # Override the Session in models.py to use our test database
-    restore_session = override_session_for_testing()
-    
-    # Create resources directory if needed
-    for dir_path in ['resources', 'media/images', 'media/videos']:
-        os.makedirs(dir_path, exist_ok=True)
-    
-    # Create a basic fallback image for tests
-    try:
-        from PIL import Image
-        fallback_img_path = 'resources/default.jpg'
-        if not os.path.exists(fallback_img_path):
-            img = Image.new('RGB', (1080, 1080), color=(52, 152, 219))
-            img.save(fallback_img_path)
-    except ImportError:
-        # PIL might not be available
-        pass
-    
-    yield {
-        'original_env': original_env
+    # Initialize the database
+    from database.models import init_db
+    init_db()
+
+@pytest.fixture(autouse=True)
+def mock_dependencies(monkeypatch):
+    """
+    Patch external dependencies for all tests.
+    This fixture runs for each test function.
+    """
+    patch_external_dependencies(monkeypatch)
+
+@pytest.fixture
+def sample_reddit_post():
+    """Provide a sample Reddit post for tests."""
+    return {
+        'reddit_id': 'test_post',
+        'title': 'Test Post Title',
+        'content': 'This is test content for the Reddit post.',
+        'subreddit': 'testsubreddit',
+        'upvotes': 5000,
+        'num_comments': 200,
+        'author': 'test_user',
+        'permalink': '/r/testsubreddit/comments/test_post/test_post_title/',
+        'url': 'https://reddit.com/r/testsubreddit/comments/test_post/test_post_title/'
     }
-    
-    # Clean up
-    restore_session()
-    
-    # Restore original environment variables
-    for key, value in original_env.items():
-        os.environ[key] = value
 
-@pytest.fixture(scope="function")
-def test_db():
-    """
-    Create a test database for a single test function.
-    
-    This provides an isolated database for each test function.
-    """
-    # Create a new test database
-    db = TestDatabase(use_memory=True)
-    
-    yield db
-    
-    # Clean up
-    db.cleanup()
-
-@pytest.fixture(scope="function")
-def test_session(test_db):
-    """
-    Create a session for database operations in tests.
-    
-    This session is connected to an isolated test database.
-    """
-    with test_db.session() as session:
-        yield session
-
-@pytest.fixture(scope="function")
-def random_reddit_id():
-    """Generate a random Reddit post ID for tests."""
-    return TestDataGenerator.random_id()
-
-@pytest.fixture(scope="function")
-def test_reddit_post(test_session):
-    """Create a test Reddit post."""
-    return TestDataGenerator.create_test_reddit_post(test_session)
-
-@pytest.fixture(scope="function")
-def test_processed_content(test_session, test_reddit_post):
-    """Create test processed content."""
-    _, content = TestDataGenerator.create_test_processed_content(
-        test_session, 
-        reddit_id=test_reddit_post.reddit_id
-    )
-    return content
-
-@pytest.fixture(scope="function")
-def test_media_content(test_session, test_reddit_post):
-    """Create test media content."""
-    _, media = TestDataGenerator.create_test_media_content(
-        test_session, 
-        reddit_id=test_reddit_post.reddit_id
-    )
-    return media
-
-@pytest.fixture(scope="function")
-def test_image_path():
-    """Create a temporary test image and return its path."""
+@pytest.fixture
+def test_image_path(tmp_path):
+    """Create a test image and return its path."""
     try:
         from PIL import Image
-        import tempfile
         
-        # Create a temporary file
-        fd, path = tempfile.mkstemp(suffix='.jpg')
-        os.close(fd)
+        # Create a test image in the temporary directory
+        image_path = tmp_path / "test_image.jpg"
         
         # Create a colored test image
         img = Image.new('RGB', (500, 500), color=(73, 109, 137))
-        img.save(path)
+        img.save(image_path)
         
-        yield path
-        
-        # Clean up
-        if os.path.exists(path):
-            os.remove(path)
+        return str(image_path)
     except ImportError:
-        # If PIL is not available, return a static path that may not exist
-        yield "tests/data/test_image.jpg"
+        # Return a fallback path if PIL is not available
+        return "resources/default.jpg"
 
-@pytest.fixture(scope="function")
-def mock_image_finder(monkeypatch):
-    """
-    Create a mocked version of ImageFinder that doesn't make real API calls.
-    """
-    from unittest.mock import MagicMock
+@pytest.fixture
+def setup_database():
+    """Set up the database for tests that need it."""
+    from database.models import RedditPost, ProcessedContent, MediaContent, Session
     
-    # Create a mock ImageFinder class
-    mock_finder = MagicMock()
+    # Create a test post
+    post_id = f"test_{os.urandom(4).hex()}"
     
-    # The find_image method will return a dict with image info
-    mock_finder.find_image.return_value = {
-        "media_type": "image",
-        "file_path": "resources/default.jpg",
-        "url": None,
-        "source": "test",
-        "source_id": "test_image",
-        "source_url": None,
-        "width": 1080,
-        "height": 1080,
-        "keywords": "test,keywords"
-    }
-    
-    # Import this here to avoid circular imports
-    import core.media.image_finder
-    
-    # Monkeypatch the ImageFinder class
-    monkeypatch.setattr(core.media.image_finder, "ImageFinder", lambda: mock_finder)
-    
-    return mock_finder
-
-@pytest.fixture(scope="function")
-def mock_video_finder(monkeypatch):
-    """
-    Create a mocked version of VideoFinder that doesn't make real API calls.
-    """
-    from unittest.mock import MagicMock
-    
-    # Create a mock VideoFinder class
-    mock_finder = MagicMock()
-    
-    # The find_video method will return a dict with video info
-    mock_finder.find_video.return_value = {
-        "media_type": "video",
-        "file_path": "resources/default_video.mp4",
-        "url": None,
-        "source": "test",
-        "source_id": "test_video",
-        "source_url": None,
-        "width": 1280,
-        "height": 720,
-        "duration": 10.0,
-        "keywords": "test,keywords"
-    }
-    
-    # Import this here to avoid circular imports
-    import core.media.video_finder
-    
-    # Monkeypatch the VideoFinder class
-    monkeypatch.setattr(core.media.video_finder, "VideoFinder", lambda: mock_finder)
-    
-    return mock_finder
-
-@pytest.fixture(scope="function")
-def mock_claude_client(monkeypatch):
-    """
-    Create a mocked version of ClaudeClient that doesn't make real API calls.
-    """
-    from unittest.mock import MagicMock
-    
-    # Create a mock ClaudeClient
-    mock_client = MagicMock()
-    
-    # Configure the generate_social_media_captions method
-    mock_client.generate_social_media_captions.return_value = {
-        "instagram_caption": "Test Instagram Caption #test",
-        "tiktok_caption": "Test TikTok Caption #test",
-        "hashtags": ["#test", "#keywords"]
-    }
-    
-    # Configure the extract_keywords method
-    mock_client.extract_keywords.return_value = ["test", "keywords", "claude"]
-    
-    # Import this here to avoid circular imports
-    import utils.claude_client
-    
-    # Monkeypatch the ClaudeClient class
-    monkeypatch.setattr(utils.claude_client, "ClaudeClient", lambda: mock_client)
-    
-    return mock_client
-
-@pytest.fixture(scope="function")
-def robust_test_image_path():
-    """Create a test image that will definitely work with image processing libraries."""
-    try:
-        from PIL import Image
-        import tempfile
-        import os
+    with Session() as session:
+        # Create a Reddit post
+        reddit_post = RedditPost(
+            reddit_id=post_id,
+            title="Test Post",
+            content="Test content",
+            subreddit="testsubreddit",
+            upvotes=1000,
+            status="new"
+        )
+        session.add(reddit_post)
         
-        # Create a temporary directory that will persist
-        temp_dir = tempfile.mkdtemp()
+        # Create processed content
+        processed_content = ProcessedContent(
+            reddit_id=post_id,
+            keywords="test,keywords",
+            hashtags="#test,#keywords",
+            instagram_caption="Test Instagram Caption",
+            tiktok_caption="Test TikTok Caption",
+            status="pending_validation"
+        )
+        session.add(processed_content)
         
-        # Create a path for our test image
-        image_path = os.path.join(temp_dir, "test_image.jpg")
+        # Create media content
+        media_content = MediaContent(
+            reddit_id=post_id,
+            media_type="image",
+            file_path="resources/default.jpg",
+            source="test",
+            source_id="test_image",
+            width=1080,
+            height=1080,
+            keywords="test,keywords"
+        )
+        session.add(media_content)
         
-        # Create a simple, reliable test image
-        image = Image.new('RGB', (100, 100), color=(73, 109, 137))
-        image.save(image_path)
-        
-        yield image_path
-        
-        # Clean up after the test
-        try:
-            os.remove(image_path)
-            os.rmdir(temp_dir)
-        except:
-            pass
-    except ImportError:
-        # Fall back to a static path in resources if PIL is not available
-        yield "resources/default.jpg"
+        session.commit()
+    
+    # Return the post ID for reference
+    return post_id
