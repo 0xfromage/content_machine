@@ -2,7 +2,7 @@
 import logging
 import json
 import os
-import anthropic
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
@@ -19,33 +19,37 @@ class ClaudeClient:
         try:
             # Load environment variables from .env file
             from dotenv import load_dotenv
-            import os
             from pathlib import Path
             
             # Try to find and load .env file from project root
             root_dir = Path(__file__).resolve().parent.parent
             env_path = root_dir / '.env'
             if env_path.exists():
+                logger.debug(f"Loading .env from {env_path}")
                 load_dotenv(env_path)
             
-            self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            
-            # More detailed logging
+            # Get the API key directly from environment
+            self.api_key = os.getenv("ANTHROPIC_API_KEY")
+            self.model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
+
+            # Add better error logging
             if not self.api_key:
-                logger.critical("No Anthropic API key found. Set ANTHROPIC_API_KEY in .env")
-                # For tests, we'll use a mock client instead of raising an error
+                logger.critical("No ANTHROPIC_API_KEY found in environment")
                 self.client = None
-                self.model = "claude-3-haiku-20240307"  # Default model
                 return
-            
-            self.client = anthropic.Anthropic(api_key=self.api_key)
-            self.model = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
-            
-            logger.info(f"Claude client initialized with model: {self.model}")
+                            
+            # Import here to avoid issues if the package is not installed
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+                logger.info(f"Claude client initialized with model: {self.model}")
+            except (ImportError, Exception) as e:
+                logger.error(f"Failed to initialize Anthropic client: {str(e)}")
+                self.client = None
+                
         except Exception as e:
             logger.critical(f"Critical error initializing Claude client: {str(e)}")
             self.client = None
-            self.model = "claude-3-haiku-20240307"  # Default model
     
     def generate_social_media_captions(self, post_data: Dict[str, Any], reddit_id: str) -> Dict[str, Any]:
         """
@@ -58,7 +62,7 @@ class ClaudeClient:
         Returns:
             Dictionnaire contenant les captions générées.
         """
-        if not self.api_key:
+        if not self.api_key or not self.client:
             logger.warning("No API key available for Claude. Using basic caption generation.")
             return self._fallback_caption_generation(post_data)
         
@@ -113,10 +117,10 @@ class ClaudeClient:
         Returns:
             Liste de mots-clés.
         """
-        if not self.api_key:
+        if not self.api_key or not self.client:
             logger.warning("No API key available for Claude. Using basic keyword extraction.")
             # Utiliser une méthode basique de fallback pour l'extraction des mots-clés
-            return []
+            return self._fallback_keyword_extraction(text)
         
         try:
             # Construire le prompt pour Claude
@@ -161,7 +165,44 @@ class ClaudeClient:
                 error_message=str(e)
             )
             
-            return []
+            return self._fallback_keyword_extraction(text)
+    
+    def _fallback_keyword_extraction(self, text: str) -> List[str]:
+        """
+        Méthode de secours pour extraire des mots-clés sans Claude.
+        
+        Args:
+            text: Texte à analyser.
+            
+        Returns:
+            Liste de mots-clés.
+        """
+        try:
+            import re
+            from collections import Counter
+            
+            # Nettoyer le texte
+            text = text.lower()
+            # Supprimer la ponctuation et les caractères spéciaux
+            text = re.sub(r'[^\w\s]', '', text)
+            
+            # Tokenizer le texte
+            words = text.split()
+            
+            # Supprimer les mots courants (stop words)
+            stop_words = {'the', 'and', 'is', 'in', 'it', 'to', 'a', 'of', 'for', 'with', 'on', 'at', 'by', 'from', 
+                          'that', 'this', 'are', 'was', 'were', 'be', 'have', 'has', 'had', 'not', 'but', 'what', 
+                          'all', 'when', 'who', 'how', 'why', 'where', 'which', 'or', 'so', 'if'}
+            filtered_words = [word for word in words if word not in stop_words and len(word) > 3]
+            
+            # Compter les occurrences
+            word_counts = Counter(filtered_words)
+            
+            # Retourner les mots les plus fréquents
+            return [word for word, _ in word_counts.most_common(10)]
+        except Exception as e:
+            logger.error(f"Error in fallback keyword extraction: {str(e)}")
+            return ["technology", "information", "knowledge", "learning", "science"]  # Default keywords
     
     def _build_caption_prompt(self, post_data: Dict[str, Any]) -> str:
         """
@@ -228,23 +269,38 @@ class ClaudeClient:
         Returns:
             Tuple contenant la réponse et le nombre de tokens utilisés.
         """
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            temperature=0.7,
-            system="Tu es un assistant expert en marketing des réseaux sociaux qui aide à créer du contenu viral.",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-        
-        # Extraire le contenu de la réponse
-        content = response.content[0].text
-        
-        # Calculer les tokens utilisés (approximatif)
-        tokens_used = response.usage.input_tokens + response.usage.output_tokens
-        
-        return content, tokens_used
+        if not self.client:
+            raise RuntimeError("Claude client not initialized. Check your ANTHROPIC_API_KEY in .env")
+            
+        try:
+            # import anthropic
+            # Ajout d'un log pour aider au débogage
+            logger.debug(f"Calling Claude API with model: {self.model}")
+            
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                temperature=0.7,
+                system="Tu es un assistant expert en marketing des réseaux sociaux qui aide à créer du contenu viral.",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            # Extraire le contenu de la réponse
+            content = response.content[0].text
+            
+            # Calculer les tokens utilisés
+            tokens_used = response.usage.input_tokens + response.usage.output_tokens
+            
+            return content, tokens_used
+        except Exception as e:
+            logger.error(f"Error calling Claude API: {str(e)}")
+            if hasattr(e, 'status_code'):
+                logger.error(f"Status code: {e.status_code}")
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                logger.error(f"Response text: {e.response.text}")
+            raise
     
     def _parse_caption_response(self, response: str) -> Dict[str, Any]:
         """
@@ -269,7 +325,6 @@ class ClaudeClient:
                 captions = json.loads(response)
             except json.JSONDecodeError:
                 # Fallback: try to extract JSON manually
-                import re
                 json_match = re.search(r'\{.*\}', response, re.DOTALL)
                 if json_match:
                     captions = json.loads(json_match.group(0))

@@ -37,6 +37,10 @@ class IntegrationTestSuite(unittest.TestCase):
         4. Generate captions
         5. (Mock) Publish to social media
         """
+        from database.models import RedditPost, Session
+        with Session() as session:
+            session.query(RedditPost).filter_by(reddit_id='abcd123').delete()
+            session.commit()
         # Use first sample post
         sample_post = self.sample_posts[0]
         
@@ -108,6 +112,10 @@ class IntegrationTestSuite(unittest.TestCase):
         """
         Test database interactions throughout the workflow
         """
+        from database.models import RedditPost, Session
+        with Session() as session:
+            session.query(RedditPost).filter_by(reddit_id='abcd123').delete()
+            session.commit()
         # Use first sample post
         sample_post = self.sample_posts[0]
         

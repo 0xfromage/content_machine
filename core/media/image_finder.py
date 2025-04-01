@@ -19,7 +19,9 @@ class ImageFinder:
     
     def __init__(self):
         """Initialiser le chercheur d'images avec les API keys."""
-        self.unsplash_access_key = config.media.unsplash_access_key
+        # Make sure we're using the same attribute names consistently
+        # Renamed from unsplash_api_key to unsplash_access_key to match config
+        self.unsplash_access_key = config.media.unsplash_access_key  # Changed from unsplash_api_key
         self.pexels_api_key = config.media.pexels_api_key
         self.pixabay_api_key = config.media.pixabay_api_key
         self.image_width = config.media.image_width
@@ -28,7 +30,16 @@ class ImageFinder:
         
         # S'assurer que le dossier des médias existe
         os.makedirs("media/images", exist_ok=True)
-        logger.info("Image finder initialized")
+        
+        # Log API availability status
+        logger.info(f"Image finder initialized with APIs: " + 
+                   f"Unsplash: {'Available' if self.unsplash_access_key else 'Missing'}, " +
+                   f"Pexels: {'Available' if self.pexels_api_key else 'Missing'}, " +
+                   f"Pixabay: {'Available' if self.pixabay_api_key else 'Missing'}")
+        
+        # Ensure fallback image directory exists
+        if self.fallback_image_path:
+            os.makedirs(os.path.dirname(self.fallback_image_path), exist_ok=True)
     
     def find_image(self, keywords: List[str], post_id: str) -> Dict[str, Any]:
         """
@@ -42,26 +53,36 @@ class ImageFinder:
             Dictionnaire contenant les informations sur l'image trouvée.
         """
         try:
+            # Ensure we have some keywords
+            if not keywords:
+                logger.warning(f"No keywords provided for post {post_id}, using default keywords")
+                keywords = ["knowledge", "learning", "information"]
+                
             # Joindre les mots-clés en une seule chaîne de recherche
             search_query = " ".join(keywords[:3])  # Limiter à 3 mots-clés pour de meilleurs résultats
+            logger.debug(f"Searching images for query: {search_query}")
             
             # Essayer chaque API de recherche d'images dans un ordre prédéfini
             image_result = None
             
             # 1. Essayer Unsplash si une clé API est disponible
-            if self.unsplash_api_key:
+            if self.unsplash_access_key:
+                logger.debug("Trying Unsplash API")
                 image_result = self._search_unsplash(search_query)
             
             # 2. Essayer Pexels si Unsplash a échoué et qu'une clé API est disponible
             if not image_result and self.pexels_api_key:
+                logger.debug("Trying Pexels API")
                 image_result = self._search_pexels(search_query)
             
             # 3. Essayer Pixabay si les deux précédents ont échoué et qu'une clé API est disponible
             if not image_result and self.pixabay_api_key:
+                logger.debug("Trying Pixabay API")
                 image_result = self._search_pixabay(search_query)
             
             # Si aucune image n'a été trouvée, utiliser l'image de secours
             if not image_result:
+                logger.debug("No image found, using fallback")
                 image_result = self._use_fallback_image()
             
             # Sauvegarder l'image dans la base de données
@@ -91,6 +112,11 @@ class ImageFinder:
             Informations sur l'image ou None si aucune image n'est trouvée.
         """
         try:
+            # Note: using unsplash_access_key here to match the attribute name
+            if not self.unsplash_access_key:
+                logger.warning("No Unsplash access key provided")
+                return None
+                
             url = "https://api.unsplash.com/search/photos"
             headers = {"Authorization": f"Client-ID {self.unsplash_access_key}"}
             params = {
@@ -99,7 +125,13 @@ class ImageFinder:
                 "orientation": "square"
             }
             
+            logger.debug(f"Sending request to Unsplash API: {url}")
             response = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            # Log the status code for debugging
+            logger.debug(f"Unsplash API response status: {response.status_code}")
+            
+            # Raise an exception for 4xx/5xx status codes
             response.raise_for_status()
             
             data = response.json()
@@ -125,10 +157,16 @@ class ImageFinder:
                     "keywords": query
                 }
             
+            logger.debug("No results from Unsplash API")
             return None
             
         except Exception as e:
             logger.warning(f"Unsplash search failed: {str(e)}")
+            
+            # More detailed error logging for API issues
+            if isinstance(e, requests.exceptions.HTTPError):
+                logger.error(f"Unsplash API error: {e.response.text if hasattr(e, 'response') else str(e)}")
+            
             return None
     
     def _search_pexels(self, query: str) -> Optional[Dict[str, Any]]:
@@ -142,6 +180,10 @@ class ImageFinder:
             Informations sur l'image ou None si aucune image n'est trouvée.
         """
         try:
+            if not self.pexels_api_key:
+                logger.warning("No Pexels API key provided")
+                return None
+                
             url = "https://api.pexels.com/v1/search"
             headers = {"Authorization": self.pexels_api_key}
             params = {
@@ -150,7 +192,13 @@ class ImageFinder:
                 "size": "medium"
             }
             
+            logger.debug(f"Sending request to Pexels API: {url}")
             response = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            # Log the status code for debugging
+            logger.debug(f"Pexels API response status: {response.status_code}")
+            
+            # Raise an exception for 4xx/5xx status codes
             response.raise_for_status()
             
             data = response.json()
@@ -176,10 +224,16 @@ class ImageFinder:
                     "keywords": query
                 }
             
+            logger.debug("No results from Pexels API")
             return None
             
         except Exception as e:
             logger.warning(f"Pexels search failed: {str(e)}")
+            
+            # More detailed error logging for API issues
+            if isinstance(e, requests.exceptions.HTTPError):
+                logger.error(f"Pexels API error: {e.response.text if hasattr(e, 'response') else str(e)}")
+                
             return None
     
     def _search_pixabay(self, query: str) -> Optional[Dict[str, Any]]:
@@ -193,6 +247,10 @@ class ImageFinder:
             Informations sur l'image ou None si aucune image n'est trouvée.
         """
         try:
+            if not self.pixabay_api_key:
+                logger.warning("No Pixabay API key provided")
+                return None
+                
             url = "https://pixabay.com/api/"
             params = {
                 "key": self.pixabay_api_key,
@@ -201,7 +259,13 @@ class ImageFinder:
                 "image_type": "photo"
             }
             
+            logger.debug(f"Sending request to Pixabay API: {url}")
             response = requests.get(url, params=params, timeout=10)
+            
+            # Log the status code for debugging
+            logger.debug(f"Pixabay API response status: {response.status_code}")
+            
+            # Raise an exception for 4xx/5xx status codes
             response.raise_for_status()
             
             data = response.json()
@@ -227,10 +291,16 @@ class ImageFinder:
                     "keywords": query
                 }
             
+            logger.debug("No results from Pixabay API")
             return None
             
         except Exception as e:
             logger.warning(f"Pixabay search failed: {str(e)}")
+            
+            # More detailed error logging for API issues
+            if isinstance(e, requests.exceptions.HTTPError):
+                logger.error(f"Pixabay API error: {e.response.text if hasattr(e, 'response') else str(e)}")
+                
             return None
     
     def _use_fallback_image(self) -> Dict[str, Any]:
@@ -240,6 +310,11 @@ class ImageFinder:
         Returns:
             Informations sur l'image de secours.
         """
+        # Ensure fallback image exists or create a default one
+        if not self.fallback_image_path or not os.path.exists(self.fallback_image_path):
+            logger.warning("Fallback image not found, creating a default one")
+            return self._create_default_image()
+            
         return {
             "media_type": "image",
             "file_path": self.fallback_image_path,
@@ -252,6 +327,56 @@ class ImageFinder:
             "keywords": "generic,fallback"
         }
     
+    def _create_default_image(self) -> Dict[str, Any]:
+        """
+        Create a default image when no fallback is available.
+        
+        Returns:
+            Information about the generated image.
+        """
+        try:
+            # Create resources directory if it doesn't exist
+            fallback_dir = "resources"
+            os.makedirs(fallback_dir, exist_ok=True)
+            
+            # Generate a simple colored image with text
+            default_path = os.path.join(fallback_dir, "default.jpg")
+            
+            # Create a colored background
+            img = Image.new('RGB', (self.image_width, self.image_height), color=(52, 152, 219))
+            
+            # Save the image
+            img.save(default_path, "JPEG", quality=95)
+            
+            logger.info(f"Created default fallback image at {default_path}")
+            
+            return {
+                "media_type": "image",
+                "file_path": default_path,
+                "url": None,
+                "source": "fallback",
+                "source_id": "default",
+                "source_url": None,
+                "width": self.image_width,
+                "height": self.image_height,
+                "keywords": "generic,fallback"
+            }
+        except Exception as e:
+            logger.error(f"Error creating default image: {str(e)}")
+            
+            # Return a minimal fallback that doesn't depend on file creation
+            return {
+                "media_type": "image",
+                "file_path": "resources/default.jpg",  # This might not exist
+                "url": None,
+                "source": "fallback",
+                "source_id": "default",
+                "source_url": None,
+                "width": 1080,
+                "height": 1080,
+                "keywords": "generic,fallback"
+            }
+    
     def _download_and_resize_image(self, url: str, save_path: str) -> None:
         """
         Télécharger et redimensionner une image.
@@ -260,17 +385,26 @@ class ImageFinder:
             url: URL de l'image à télécharger.
             save_path: Chemin où sauvegarder l'image.
         """
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Ouvrir l'image avec PIL
-        image = Image.open(BytesIO(response.content))
-        
-        # Redimensionner l'image pour Instagram (ratio carré)
-        resized_image = self._resize_image(image)
-        
-        # Sauvegarder l'image redimensionnée
-        resized_image.save(save_path, "JPEG", quality=95)
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            # Ouvrir l'image avec PIL
+            image = Image.open(BytesIO(response.content))
+            
+            # Redimensionner l'image pour Instagram (ratio carré)
+            resized_image = self._resize_image(image)
+            
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            
+            # Sauvegarder l'image redimensionnée
+            resized_image.save(save_path, "JPEG", quality=95)
+            
+            logger.debug(f"Image downloaded and saved to {save_path}")
+        except Exception as e:
+            logger.error(f"Error downloading image: {str(e)}")
+            raise
     
     def _resize_image(self, image: Image.Image) -> Image.Image:
         """
@@ -314,26 +448,45 @@ class ImageFinder:
         """
         try:
             with Session() as session:
-                # Mettre à jour le statut du contenu traité
-                processed_content = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()
-                if processed_content:
-                    processed_content.has_media = True
+                # Check if media content already exists for this post
+                existing_media = session.query(MediaContent).filter_by(reddit_id=post_id).first()
                 
-                # Créer une nouvelle entrée pour le contenu média
-                media_content = MediaContent(
-                    reddit_id=post_id,
-                    media_type=media_data["media_type"],
-                    file_path=media_data["file_path"],
-                    source_url=media_data["source_url"],
-                    source=media_data["source"],
-                    source_id=media_data["source_id"],
-                    width=media_data["width"],
-                    height=media_data["height"],
-                    keywords=media_data["keywords"]
-                )
+                if existing_media:
+                    logger.warning(f"Media content already exists for post {post_id}, updating")
+                    
+                    # Update existing record
+                    existing_media.media_type = media_data["media_type"]
+                    existing_media.file_path = media_data["file_path"]
+                    existing_media.source_url = media_data["source_url"]
+                    existing_media.source = media_data["source"]
+                    existing_media.source_id = media_data["source_id"]
+                    existing_media.width = media_data["width"]
+                    existing_media.height = media_data["height"]
+                    existing_media.keywords = media_data["keywords"]
+                    existing_media.updated_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    # Mettre à jour le statut du contenu traité
+                    processed_content = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()
+                    if processed_content:
+                        processed_content.has_media = True
+                    
+                    # Créer une nouvelle entrée pour le contenu média
+                    media_content = MediaContent(
+                        reddit_id=post_id,
+                        media_type=media_data["media_type"],
+                        file_path=media_data["file_path"],
+                        source_url=media_data["source_url"],
+                        source=media_data["source"],
+                        source_id=media_data["source_id"],
+                        width=media_data["width"],
+                        height=media_data["height"],
+                        keywords=media_data["keywords"]
+                    )
+                    
+                    session.add(media_content)
                 
-                session.add(media_content)
                 session.commit()
+                logger.debug(f"Media content saved to database for post {post_id}")
                 
         except Exception as e:
             logger.error(f"Failed to save media content to database: {str(e)}")
