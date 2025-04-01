@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  content_machine:
+    build: .
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+
+  streamlit_interface:
+    build: .
+    command: streamlit run web_interface/app.py
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    depends_on:
+      - content_machine
+    restart: unless-stopped

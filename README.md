@@ -1,326 +1,177 @@
 # Content Machine
 
-## Présentation
+## Project Overview
 
-Content Machine est une application Python qui automatise la génération et la publication de contenu sur les réseaux sociaux à partir de posts Reddit populaires.
+Content Machine is an automated social media content generation tool that scrapes interesting posts from Reddit, processes them, finds relevant media, and prepares them for publication on Instagram and TikTok.
 
-Le flux de travail principal est le suivant :
+## Getting Started
 
-1. Scraping des posts populaires sur Reddit
-2. Traitement et optimisation du contenu pour les réseaux sociaux (Instagram et TikTok)
-3. Recherche automatique d'images pertinentes
-4. Interface de validation humaine avant publication
-5. Publication automatisée sur Instagram et TikTok
-
-## Architecture
-
-L'application est conçue selon une architecture modulaire avec une séparation claire des responsabilités. Voici les principaux composants:
-
-- **Scraper**: Récupère les posts populaires sur Reddit
-- **Processor**: Traite et reformate le contenu pour les réseaux sociaux
-- **Media Finder**: Recherche des images pertinentes pour le contenu
-- **Content Validator**: Interface web pour valider le contenu avant publication
-- **Publisher**: Publie le contenu sur Instagram et TikTok
-- **Database**: Stockage centralisé des données et du statut du contenu
-- **Claude AI**: Intégration avec Claude d'Anthropic pour générer des captions optimisées
-
-## Installation
-
-### Prérequis
+### Prerequisites
 
 - Python 3.9+
-- Pip
-- Virtualenv (recommandé)
+- pip
+- Virtual environment (recommended)
 
-### Installation des dépendances
+### Installation Steps
+
+1. Clone the repository
 
 ```bash
-# Créer et activer un environnement virtuel (recommandé)
-python -m venv venv
-source venv/bin/activate  # Pour Linux/Mac
-venv\Scripts\activate     # Pour Windows
+git clone https://github.com/yourusername/content-machine.git
+cd content-machine
+```
 
-# Installer les dépendances
+2. Create and activate a virtual environment
+
+```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate (Linux/macOS)
+source venv/bin/activate
+
+# Activate (Windows)
+venv\Scripts\activate
+```
+
+3. Install dependencies
+
+```bash
 pip install -r requirements.txt
 
-# Télécharger les ressources NLTK nécessaires
+# Download NLTK resources
 python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')"
 ```
 
-### Configuration
+4. Configure Environment
 
-1. Copier le fichier `.env.example` en `.env`
-2. Modifier le fichier `.env` avec vos identifiants et clés API:
-   - API Reddit
-   - API d'images (Unsplash, Pexels, Pixabay)
-   - Identifiants Instagram et TikTok
-   - API Claude (Anthropic)
-
-## Utilisation
-
-### Exécution de base
+- Copy `.env.example` to `.env`
+- Fill in your API credentials:
+  - Reddit API credentials
+  - Instagram/TikTok credentials
+  - Anthropic Claude AI key
+  - Image API keys (Unsplash, Pexels, Pixabay)
 
 ```bash
-# Exécuter le pipeline complet (scraping, traitement, média, validation)
-python main.py --all
-
-# Exécuter seulement des étapes spécifiques
-python main.py --scrape
-python main.py --process
-python main.py --media
-python main.py --validate
+cp .env.example .env
+# Edit the .env file with your credentials
 ```
 
-### Mode Daemon (continu)
+## Running the Application
+
+### Command Line Options
 
 ```bash
-# Exécuter en mode daemon avec l'intervalle par défaut (1 heure)
+# Run full pipeline
+python main.py --all
+
+# Run specific components
+python main.py --scrape      # Only scrape Reddit
+python main.py --process     # Only process content
+python main.py --media       # Only find media
+python main.py --validate    # Launch web interface
+```
+
+### Daemon Mode (Continuous Operation)
+
+```bash
+# Run in background with 1-hour interval
 python main.py --daemon --all
 
-# Exécuter en mode daemon avec un intervalle personnalisé (en secondes)
+# Custom interval (in seconds)
 python main.py --daemon --all --interval 1800  # 30 minutes
 ```
 
-### Interface de validation
+## Web Interface Usage
 
-L'interface de validation Streamlit est accessible à:
-
-```
-http://localhost:8501
-```
-
-Cette interface vous permet de:
-
-- Visualiser les posts traités et leurs images associées
-- Modifier les captions générées
-- Valider ou rejeter le contenu
-- Publier directement sur Instagram et TikTok
-
-## Structure du projet
-
-```
-content_machine/
-│
-├── .env                      # Variables d'environnement
-├── .gitignore                # Fichiers à ignorer pour Git
-├── requirements.txt          # Dépendances du projet
-├── README.md                 # Documentation du projet
-├── main.py                   # Point d'entrée principal
-│
-├── config/                   # Configuration centralisée
-├── core/                     # Logique métier principale
-│   ├── scraper/              # Scraping de Reddit
-│   ├── processor/            # Traitement du texte
-│   ├── media/                # Recherche de médias
-│   ├── publisher/            # Publication sur réseaux sociaux
-│   └── validator/            # Validation du contenu
-│
-├── database/                 # Gestion de la base de données
-├── web_interface/            # Interface Streamlit
-└── utils/                    # Utilitaires (logging, erreurs, etc.)
-```
-
-## Développement
-
-### Linting et Formatage
+### Launching the Interface
 
 ```bash
-# Formater le code avec Black
-black content_machine/
-
-# Vérifier le style avec Flake8
-flake8 content_machine/
+streamlit run web_interface/app.py
 ```
 
-### Tests
+### Interface Sections
+
+1. **Contenu à valider (Content to Validate)**
+
+   - View newly processed content
+   - Manually review and edit captions
+   - Validate or reject content
+
+2. **Contenu scrapé (Scraped Content)**
+
+   - See newly scraped Reddit posts
+   - Manually process or delete posts
+
+3. **Actions Available**
+   - Edit captions
+   - Select platforms for publishing
+   - Bulk validate/reject content
+   - Publish to Instagram/TikTok
+
+### Interface Navigation
+
+- Use sidebar to switch between different content views
+- Select multiple posts for batch actions
+- Modify captions before publishing
+
+## Running Tests
+
+### Test Types
+
+- Unit Tests: Test individual components
+- Integration Tests: Verify system workflow
+- Media Tests: Check media processing
+- Claude Client Tests: Validate AI interactions
+
+### Running Tests
 
 ```bash
-# Exécuter les tests
-pytest
+# Run all tests
+python -m unittest discover tests
+
+# Run specific test files
+python -m unittest tests.test_processor
+python -m unittest tests.test_integration
+python -m unittest tests.test_media
+```
+
+### Specific Test Execution
+
+```bash
+# Run a specific test class
+python -m unittest tests.test_processor.TestTextProcessor
+
+# Run a specific test method
+python -m unittest tests.test_processor.TestTextProcessor.test_clean_text
 ```
 
 ## Troubleshooting
 
-### Logs
+- Check `logs/` directory for detailed logs
+- Ensure all API credentials are correctly configured
+- Verify internet connection
+- Check Python and dependency versions
 
-Les logs sont stockés dans le dossier `logs/`:
+## Configuration Tips
 
-- `app.log` - Logs généraux de l'application
-- `daily.log` - Logs quotidiens
-- `error.log` - Logs d'erreurs détaillés
-- `json.log` - Logs au format JSON pour analyse
+- `config/settings.py`: Global application settings
+- `config/constants.py`: Fixed constants and configurations
+- `.env`: Personal API keys and sensitive information
 
-### Problèmes courants
+## Contributing
 
-- **Erreurs d'authentification Reddit**: Vérifiez votre Client ID et Client Secret
-- **Erreurs d'authentification Instagram/TikTok**: Vérifiez vos identifiants et assurez-vous de ne pas dépasser les limites de l'API
-- **Rate limit dépassé**: Augmentez l'intervalle d'exécution en mode daemon
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a pull request
 
-````markdown
-## Bonnes pratiques de développement
+## License
 
-### Style de code
-
-Le projet suit les conventions PEP 8 pour le style de code Python. Nous utilisons Black comme formateur de code et Flake8 pour le linting.
-
-```bash
-# Formater le code
-black content_machine/
-
-# Vérifier le style avec Flake8
-flake8 content_machine/
-```
-````
-
-### Gestion des branches Git
-
-Pour contribuer au projet, veuillez suivre le flux de travail des branches suivant:
-
-1. Créez une branche à partir de `main` pour votre fonctionnalité ou correction: `feature/nom-de-fonctionnalité` ou `fix/nom-du-problème`
-2. Développez et testez vos modifications
-3. Créez une Pull Request pour faire réviser votre code
-4. Une fois approuvée, la PR sera fusionnée dans `main`
-
-### Tests
-
-Tous les nouveaux composants doivent être accompagnés de tests unitaires. Les tests doivent couvrir les cas normaux et les cas d'erreur.
-
-```bash
-# Exécuter tous les tests
-pytest
-
-# Exécuter un test spécifique
-pytest tests/test_scraper.py
-
-# Exécuter les tests avec couverture de code
-pytest --cov=content_machine tests/
-```
-
-### Documentation
-
-Tous les modules, classes et fonctions doivent être documentés à l'aide de docstrings au format Google:
-
-```python
-def function(arg1: type, arg2: type) -> return_type:
-    """
-    Description de la fonction.
-
-    Args:
-        arg1: Description du premier argument.
-        arg2: Description du deuxième argument.
-
-    Returns:
-        Description de la valeur de retour.
-
-    Raises:
-        ExceptionType: Description de quand l'exception est levée.
-    """
-```
-
-````
-
-## Ajout d'une section sur la sécurité
-
-```markdown
-## Sécurité
-
-### Gestion des secrets
-
-Tous les secrets (clés API, identifiants) doivent être stockés dans le fichier `.env` et ne jamais être inclus dans le code ou les commits Git. Un fichier `.env.example` est fourni comme modèle.
-
-### Authentification aux API
-
-Les jetons d'accès pour les API externes sont gérés via des variables d'environnement et ne doivent jamais être codés en dur dans l'application.
-
-### Sécurisation des données utilisateur
-
-Les identifiants Instagram et TikTok doivent être manipulés avec précaution. L'application sauvegarde les sessions pour éviter de stocker les mots de passe en clair.
-
-### Scan de sécurité
-
-Avant chaque déploiement, un scan des dépendances est recommandé pour identifier les vulnérabilités potentielles:
-
-```bash
-# Vérifier les dépendances
-safety check -r requirements.txt
-````
-
-````
-
-## Ajout d'une section sur le déploiement
-
-```markdown
-## Déploiement
-
-### Exigences système
-
-- Python 3.9+
-- 2 GB de RAM minimum (4 GB recommandé)
-- 1 GB d'espace disque (plus selon le volume de médias stockés)
-- Accès Internet pour les API externes
-
-### Installation sur un serveur
-
-1. Cloner le dépôt:
-   ```bash
-   git clone https://github.com/votre-organisation/content-machine.git
-   cd content-machine
-````
-
-2. Créer et activer un environnement virtuel:
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   venv\Scripts\activate     # Windows
-   ```
-
-3. Installer les dépendances:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Configurer le fichier .env:
-
-   ```bash
-   cp .env.example .env
-   nano .env  # Modifier avec vos identifiants et clés API
-   ```
-
-5. Initialiser la base de données:
-
-   ```bash
-   python -c "from database.database import init_db; init_db()"
-   ```
-
-6. Lancer l'application en mode daemon:
-   ```bash
-   nohup python main.py --daemon --all --interval 3600 > app.log 2>&1 &
-   ```
-
-### Utilisation avec Docker
-
-Un Dockerfile et un fichier docker-compose.yml sont inclus pour faciliter le déploiement:
-
-```bash
-# Construire l'image
-docker-compose build
-
-# Lancer les conteneurs
-docker-compose up -d
-
-# Vérifier les logs
-docker-compose logs -f
-```
+[Specify your project's license]
 
 ```
 
-## Contribution
-
-Les contributions sont les bienvenues! N'hésitez pas à ouvrir une issue ou une pull request.
-
-## Licence
-
-Ce projet est sous licence MIT.
+Would you like me to elaborate on any specific section of the README or explain how to use any particular feature in more depth?
 ```
