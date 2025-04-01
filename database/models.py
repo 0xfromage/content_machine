@@ -4,9 +4,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
+import sys
 from pathlib import Path
 
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 from config.settings import config
+
 
 # Créer le moteur SQLAlchemy en fonction de la configuration
 if config.database.db_type == 'sqlite':

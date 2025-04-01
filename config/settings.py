@@ -47,6 +47,11 @@ class MediaConfig:
     image_width: int = 1080
     image_height: int = 1080
     fallback_image_path: str = os.getenv("FALLBACK_IMAGE_PATH", "resources/default.jpg")
+    fallback_video_path: str = os.getenv("FALLBACK_VIDEO_PATH", "resources/default_video.mp4")
+    
+    def get(self, attr, default=None):
+        """Get an attribute with a default value."""
+        return getattr(self, attr, default)
 
 @dataclass
 class InstagramConfig:

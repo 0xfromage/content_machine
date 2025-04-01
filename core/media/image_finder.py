@@ -19,7 +19,7 @@ class ImageFinder:
     
     def __init__(self):
         """Initialiser le chercheur d'images avec les API keys."""
-        self.unsplash_api_key = config.media.unsplash_api_key
+        self.unsplash_access_key = config.media.unsplash_access_key
         self.pexels_api_key = config.media.pexels_api_key
         self.pixabay_api_key = config.media.pixabay_api_key
         self.image_width = config.media.image_width

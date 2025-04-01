@@ -20,7 +20,7 @@ class VideoFinder:
         """Initialiser le chercheur de vidéos avec les API keys."""
         self.pexels_api_key = config.media.pexels_api_key
         self.pixabay_api_key = config.media.pixabay_api_key
-        self.fallback_video_path = config.media.get('fallback_video_path', 'resources/default_video.mp4')
+        self.fallback_video_path = config.media.fallback_video_path
         
         # S'assurer que le dossier des médias existe
         os.makedirs("media/videos", exist_ok=True)

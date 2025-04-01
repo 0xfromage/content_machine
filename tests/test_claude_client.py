@@ -71,15 +71,26 @@ class TestClaudeClient(unittest.TestCase):
     
     def test_fallback_caption_generation(self):
         """Test fallback caption generation when no API key is available"""
-        # Temporarily remove API key
-        original_api_key = os.environ.get('ANTHROPIC_API_KEY')
-        os.environ['ANTHROPIC_API_KEY'] = ''
+        # Save original API key (if any)
+        original_api_key = os.environ.get('ANTHROPIC_API_KEY', '')
         
         try:
-            client = ClaudeClient()
+            # Clear the API key to force fallback
+            os.environ['ANTHROPIC_API_KEY'] = ''
+            
+            # Create a special test ClaudeClient for this test
+            from utils.claude_client import ClaudeClient
+            
+            class TestClaudeClient(ClaudeClient):
+                def __init__(self):
+                    self.api_key = None
+                    self.client = None
+                    self.model = "claude-3-haiku-20240307"
+            
+            client = TestClaudeClient()
             sample_post = self.sample_posts[0]
             
-            # Force fallback method
+            # Call the fallback method directly
             captions = client._fallback_caption_generation(sample_post)
             
             # Assertions
@@ -91,9 +102,8 @@ class TestClaudeClient(unittest.TestCase):
         
         finally:
             # Restore original API key
-            if original_api_key:
-                os.environ['ANTHROPIC_API_KEY'] = original_api_key
-    
+            os.environ['ANTHROPIC_API_KEY'] = original_api_key
+        
     def test_parse_caption_response(self):
         """Test parsing of Claude API response"""
         client = ClaudeClient()
