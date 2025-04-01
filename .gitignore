@@ -26,9 +26,13 @@ logs/
 *.sqlite3
 instagram_session_*.json
 
-# Médias téléchargés
-media/
-resources/
+# Médias téléchargés - ignorer les fichiers mais pas les répertoires
+# Ignorer uniquement les fichiers média à la racine du dossier media
+media/*
+!media/.gitkeep
+!media/**/*.py
+resources/*
+!resources/.gitkeep
 
 # Fichiers temporaires
 *.tmp
