@@ -150,7 +150,7 @@ class TestTextProcessor(unittest.TestCase):
         hashtags_found = sum(1 for tag in hashtags if tag in tiktok_caption)
         self.assertGreater(hashtags_found, 0)
     
-    @patch('core.processor.text_processor._save_processed_content')
+    @patch('core.processor.text_processor.TextProcessor._save_processed_content')
     def test_process_post(self, mock_save):
         """Tester le traitement complet d'un post."""
         # Configurer le mock pour sauvegarder le contenu
