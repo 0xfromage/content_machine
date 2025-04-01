@@ -1,0 +1,51 @@
+# Fichiers d'environnement
+.env
+.env.*
+
+# Fichiers Python compilés
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environnements virtuels
+venv/
+env/
+ENV/
+.venv/
+
+# Logs et bases de données
+logs/
+*.log
+*.db
+*.sqlite3
+instagram_session_*.json
+
+# Médias téléchargés
+media/
+resources/
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+
+# Fichiers IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Fichiers spécifiques à ce projet
+content_machine.db
+*.mp4
+*.jpg
+*.png
+*.jpeg
