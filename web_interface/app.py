@@ -69,7 +69,7 @@ class ContentValidatorApp:
             self._show_published_content()
     
     def _show_scraped_content(self):
-        """Afficher le contenu scrapé en attente de traitement."""
+        """Afficher le contenu scrapé en attente de traitement avec une interface améliorée."""
         st.header("Contenu scrapé en attente de traitement")
         
         with Session() as session:
@@ -79,78 +79,79 @@ class ContentValidatorApp:
                 st.info("Aucun nouveau contenu scrapé à traiter.")
                 return
             
-            # Option de sélection en masse avec checkboxes
-            st.write("### Sélection en masse")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write("Sélectionner les posts pour action en masse:")
-            with col2:
-                if st.button("Tout sélectionner / Désélectionner"):
-                    if len(st.session_state.selected_scraped_posts) == len(scraped_posts):
-                        # If all are selected, deselect all
-                        st.session_state.selected_scraped_posts = set()
-                    else:
-                        # Otherwise select all
-                        st.session_state.selected_scraped_posts = {post.reddit_id for post in scraped_posts}
-                    st.rerun()
-            
-            # Display checkboxes for each post
-            for post in scraped_posts:
-                checkbox_key = f"checkbox_scraped_{post.reddit_id}"
-                is_checked = post.reddit_id in st.session_state.selected_scraped_posts
-                if st.checkbox(
-                    f"{post.title[:50]}..." if len(post.title) > 50 else post.title,
-                    value=is_checked,
-                    key=checkbox_key
-                ):
-                    st.session_state.selected_scraped_posts.add(post.reddit_id)
-                elif post.reddit_id in st.session_state.selected_scraped_posts:
-                    st.session_state.selected_scraped_posts.remove(post.reddit_id)
-            
-            # Get the selected posts
-            selected_posts = list(st.session_state.selected_scraped_posts)
-            
-            # Actions en masse
-            if selected_posts:
-                st.write(f"**{len(selected_posts)} posts sélectionnés**")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("Traiter la sélection"):
-                        for post_id in selected_posts:
-                            # Mettre à jour le statut pour traitement
-                            post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
-                            if post:
-                                post.status = 'pending_processing'
-                        session.commit()
-                        st.session_state.selected_scraped_posts = set()
-                        st.success(f"{len(selected_posts)} posts marqués pour traitement")
-                        st.rerun()
+            # Mass action section with select/deselect all button
+            with st.container():
+                st.subheader("Actions en masse")
                 
+                col1, col2 = st.columns([3, 1])
                 with col2:
-                    if st.button("Supprimer la sélection"):
-                        for post_id in selected_posts:
-                            post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
-                            if post:
-                                session.delete(post)
-                        session.commit()
-                        st.session_state.selected_scraped_posts = set()
-                        st.success(f"{len(selected_posts)} posts supprimés")
+                    if st.button("Tout sélectionner / Désélectionner"):
+                        if len(st.session_state.selected_scraped_posts) == len(scraped_posts):
+                            # If all are selected, deselect all
+                            st.session_state.selected_scraped_posts = set()
+                        else:
+                            # Otherwise select all
+                            st.session_state.selected_scraped_posts = {post.reddit_id for post in scraped_posts}
                         st.rerun()
                 
-                with col3:
-                    if st.button("Supprimer définitivement la sélection"):
-                        self._permanently_delete_posts(selected_posts)
-                        st.session_state.selected_scraped_posts = set()
-                        st.success(f"{len(selected_posts)} posts supprimés définitivement")
-                        st.rerun()
+                with col1:
+                    st.write(f"**{len(st.session_state.selected_scraped_posts)} posts sélectionnés**")
+                
+                # Get the selected posts for mass actions
+                selected_posts = list(st.session_state.selected_scraped_posts)
+                
+                # Display mass actions if there are selected posts
+                if selected_posts:
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button("Traiter la sélection"):
+                            for post_id in selected_posts:
+                                # Mettre à jour le statut pour traitement
+                                post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
+                                if post:
+                                    post.status = 'pending_processing'
+                            session.commit()
+                            st.session_state.selected_scraped_posts = set()
+                            st.success(f"{len(selected_posts)} posts marqués pour traitement")
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("Supprimer la sélection"):
+                            for post_id in selected_posts:
+                                post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
+                                if post:
+                                    session.delete(post)
+                            session.commit()
+                            st.session_state.selected_scraped_posts = set()
+                            st.success(f"{len(selected_posts)} posts supprimés")
+                            st.rerun()
+                    
+                    with col3:
+                        if st.button("Supprimer définitivement la sélection"):
+                            self._permanently_delete_posts(selected_posts)
+                            st.session_state.selected_scraped_posts = set()
+                            st.success(f"{len(selected_posts)} posts supprimés définitivement")
+                            st.rerun()
             
-            # Afficher chaque post individuellement
+            # List of individual posts
+            st.subheader("Posts")
             for post in scraped_posts:
                 with st.expander(f"{post.title} (r/{post.subreddit})"):
-                    st.write(f"**Upvotes:** {post.upvotes} | **Commentaires:** {post.num_comments}")
-                    st.write(f"**Date de création:** {post.created_utc}")
-                    st.write(f"**Auteur:** {post.author}")
-                    st.write(f"**Lien Reddit:** [Voir sur Reddit](https://reddit.com{post.permalink})")
+                    # Add checkbox at top of expanded section
+                    col1, col2 = st.columns([0.5, 11.5])
+                    with col1:
+                        is_checked = post.reddit_id in st.session_state.selected_scraped_posts
+                        if st.checkbox("", value=is_checked, key=f"scraped_cb_{post.reddit_id}"):
+                            st.session_state.selected_scraped_posts.add(post.reddit_id)
+                        else:
+                            if post.reddit_id in st.session_state.selected_scraped_posts:
+                                st.session_state.selected_scraped_posts.remove(post.reddit_id)
+                    
+                    with col2:
+                        st.write(f"**Upvotes:** {post.upvotes} | **Commentaires:** {post.num_comments}")
+                        st.write(f"**Date de création:** {post.created_utc}")
+                        st.write(f"**Auteur:** {post.author}")
+                        st.write(f"**Lien Reddit:** [Voir sur Reddit](https://reddit.com{post.permalink})")
                     
                     if post.content:
                         with st.expander("Contenu complet"):
@@ -187,7 +188,7 @@ class ContentValidatorApp:
                             self._permanently_delete_posts([post.reddit_id])
                             st.success("Post supprimé définitivement")
                             st.rerun()
-    
+
     def _show_content_to_validate(self):
         """Afficher le contenu traité en attente de validation."""
         content_filter = ProcessedContent.status == 'pending_validation'
@@ -332,124 +333,125 @@ class ContentValidatorApp:
     
     def _display_contents(self, contents):
         """
-        Afficher les contenus dans l'interface Streamlit.
+        Afficher les contenus dans l'interface Streamlit avec une interface améliorée.
         
         Args:
             contents: Liste de contenus à afficher.
         """
-        # Option de sélection en masse avec checkboxes
-        st.write("### Sélection en masse")
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write("Sélectionner les contenus pour action en masse:")
-        with col2:
-            if st.button("Tout sélectionner / Désélectionner"):
-                if len(st.session_state.selected_contents) == len(contents):
-                    # If all are selected, deselect all
-                    st.session_state.selected_contents = set()
-                else:
-                    # Otherwise select all
-                    st.session_state.selected_contents = {content['reddit_id'] for content in contents}
-                st.rerun()
-        
-        # Display checkboxes for each content
-        for content in contents:
-            checkbox_key = f"checkbox_content_{content['reddit_id']}"
-            is_checked = content['reddit_id'] in st.session_state.selected_contents
-            if st.checkbox(
-                f"{content['title'][:50]}..." if len(content['title']) > 50 else content['title'],
-                value=is_checked,
-                key=checkbox_key
-            ):
-                st.session_state.selected_contents.add(content['reddit_id'])
-            elif content['reddit_id'] in st.session_state.selected_contents:
-                st.session_state.selected_contents.remove(content['reddit_id'])
-        
-        # Get the selected contents
-        selected_contents = list(st.session_state.selected_contents)
-        
-        # Actions en masse
-        if selected_contents:
-            st.write(f"**{len(selected_contents)} contenus sélectionnés**")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                if st.button("Valider la sélection"):
-                    for content_id in selected_contents:
-                        content = next((c for c in contents if c['reddit_id'] == content_id), None)
-                        if content:
-                            self._update_content_status(
-                                content_id, 
-                                'validated', 
-                                content['instagram_caption'], 
-                                content['tiktok_caption']
-                            )
-                    st.session_state.selected_contents = set()
-                    st.success(f"{len(selected_contents)} contenus validés!")
-                    st.rerun()
+        # Mass action section
+        with st.container():
+            st.subheader("Actions en masse")
             
+            # Display select/deselect all button
+            col1, col2 = st.columns([3, 1])
             with col2:
-                if st.button("Rejeter la sélection"):
-                    for content_id in selected_contents:
-                        content = next((c for c in contents if c['reddit_id'] == content_id), None)
-                        if content:
-                            self._update_content_status(
-                                content_id, 
-                                'rejected', 
-                                content['instagram_caption'], 
-                                content['tiktok_caption']
-                            )
-                    st.session_state.selected_contents = set()
-                    st.success(f"{len(selected_contents)} contenus rejetés!")
+                if st.button("Tout sélectionner / Désélectionner"):
+                    if len(st.session_state.selected_contents) == len(contents):
+                        # If all are selected, deselect all
+                        st.session_state.selected_contents = set()
+                    else:
+                        # Otherwise select all
+                        st.session_state.selected_contents = {content['reddit_id'] for content in contents}
                     st.rerun()
             
-            with col3:
-                if st.button("Supprimer définitivement la sélection"):
-                    self._permanently_delete_contents(selected_contents)
-                    st.session_state.selected_contents = set()
-                    st.success(f"{len(selected_contents)} contenus supprimés définitivement!")
-                    st.rerun()
+            with col1:
+                st.write(f"**{len(st.session_state.selected_contents)} contenus sélectionnés**")
             
-            with col4:
-                platforms = st.multiselect(
-                    "Plateformes",
-                    options=["Instagram", "TikTok"],
-                    default=["Instagram", "TikTok"],
-                    key="platforms_mass_publish"
-                )
-                
-                if st.button("Publier la sélection"):
-                    success_count = 0
-                    for content_id in selected_contents:
-                        content = next((c for c in contents if c['reddit_id'] == content_id), None)
-                        if content:
-                            success = True
-                            if "Instagram" in platforms:
-                                ig_success = self._publish_to_instagram(
+            # Actions for selected items
+            if st.session_state.selected_contents:
+                selected_contents = list(st.session_state.selected_contents)
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    if st.button("Valider la sélection"):
+                        for content_id in selected_contents:
+                            content = next((c for c in contents if c['reddit_id'] == content_id), None)
+                            if content:
+                                self._update_content_status(
                                     content_id, 
+                                    'validated', 
                                     content['instagram_caption'], 
-                                    content['media_path']
+                                    content['tiktok_caption']
                                 )
-                                success = success and ig_success
-                            
-                            if "TikTok" in platforms:
-                                tt_success = self._publish_to_tiktok(
+                        st.session_state.selected_contents = set()
+                        st.success(f"{len(selected_contents)} contenus validés!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("Rejeter la sélection"):
+                        for content_id in selected_contents:
+                            content = next((c for c in contents if c['reddit_id'] == content_id), None)
+                            if content:
+                                self._update_content_status(
                                     content_id, 
-                                    content['tiktok_caption'], 
-                                    content['media_path']
+                                    'rejected', 
+                                    content['instagram_caption'], 
+                                    content['tiktok_caption']
                                 )
-                                success = success and tt_success
-                            
-                            if success:
-                                success_count += 1
+                        st.session_state.selected_contents = set()
+                        st.success(f"{len(selected_contents)} contenus rejetés!")
+                        st.rerun()
+                
+                with col3:
+                    if st.button("Supprimer définitivement la sélection"):
+                        self._permanently_delete_contents(selected_contents)
+                        st.session_state.selected_contents = set()
+                        st.success(f"{len(selected_contents)} contenus supprimés définitivement!")
+                        st.rerun()
+                
+                with col4:
+                    platforms = st.multiselect(
+                        "Plateformes",
+                        options=["Instagram", "TikTok"],
+                        default=["Instagram", "TikTok"],
+                        key="platforms_mass_publish"
+                    )
                     
-                    st.session_state.selected_contents = set()
-                    st.success(f"{success_count}/{len(selected_contents)} contenus publiés avec succès!")
-                    st.rerun()
+                    if st.button("Publier la sélection"):
+                        success_count = 0
+                        for content_id in selected_contents:
+                            content = next((c for c in contents if c['reddit_id'] == content_id), None)
+                            if content:
+                                success = True
+                                if "Instagram" in platforms:
+                                    ig_success = self._publish_to_instagram(
+                                        content_id, 
+                                        content['instagram_caption'], 
+                                        content['media_path']
+                                    )
+                                    success = success and ig_success
+                                
+                                if "TikTok" in platforms:
+                                    tt_success = self._publish_to_tiktok(
+                                        content_id, 
+                                        content['tiktok_caption'], 
+                                        content['media_path']
+                                    )
+                                    success = success and tt_success
+                                
+                                if success:
+                                    success_count += 1
+                        
+                        st.session_state.selected_contents = set()
+                        st.success(f"{success_count}/{len(selected_contents)} contenus publiés avec succès!")
+                        st.rerun()
         
         # Affichage individuel des contenus
+        st.subheader("Contenus")
         for i, content in enumerate(contents):
             with st.container():
-                st.header(f"#{i+1} - {content['title']}")
+                # Add checkbox in the title area
+                col1, col2 = st.columns([0.5, 11.5])
+                with col1:
+                    # Display the checkbox inline with the title
+                    is_checked = content['reddit_id'] in st.session_state.selected_contents
+                    if st.checkbox("", value=is_checked, key=f"cb_{content['reddit_id']}"):
+                        st.session_state.selected_contents.add(content['reddit_id'])
+                    else:
+                        if content['reddit_id'] in st.session_state.selected_contents:
+                            st.session_state.selected_contents.remove(content['reddit_id'])
+                
+                with col2:
+                    st.header(f"#{i+1} - {content['title']}")
                 
                 # Afficher les détails du post Reddit
                 col1, col2 = st.columns([2, 3])
@@ -544,7 +546,6 @@ class ContentValidatorApp:
                         default=["Instagram", "TikTok"],
                         key=f"platforms_{content['reddit_id']}"
                     )
-
                 
                 # Actions
                 col1, col2, col3, col4 = st.columns(4)
