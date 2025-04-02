@@ -1,3 +1,4 @@
+# core/media/image_finder.py
 import os
 import logging
 import requests
@@ -15,26 +16,28 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 from config.settings import config
 from utils.error_handler import handle_media_error
+from utils.claude_media_search import ClaudeMediaSearch
 from database.models import Session, RedditPost, ProcessedContent, MediaContent
 
 logger = logging.getLogger(__name__)
 
-
 class ImageFinder:
-    """Classe pour rechercher des images pertinentes basées sur les mots-clés."""
+    """Class for finding relevant images based on content keywords."""
     
     def __init__(self):
-        """Initialiser le chercheur d'images avec les API keys."""
+        """Initialize the image finder with API keys."""
         # Make sure we're using the same attribute names consistently
-        # Renamed from unsplash_api_key to unsplash_access_key to match config
-        self.unsplash_access_key = config.media.unsplash_access_key  # Changed from unsplash_api_key
+        self.unsplash_access_key = config.media.unsplash_access_key
         self.pexels_api_key = config.media.pexels_api_key
         self.pixabay_api_key = config.media.pixabay_api_key
         self.image_width = config.media.image_width
         self.image_height = config.media.image_height
         self.fallback_image_path = config.media.fallback_image_path
         
-        # S'assurer que le dossier des médias existe
+        # Initialize the Claude-powered media search enhancer
+        self.claude_search = ClaudeMediaSearch()
+        
+        # Ensure image directories exist
         os.makedirs("media/images", exist_ok=True)
         
         # Log API availability status
@@ -49,81 +52,74 @@ class ImageFinder:
     
     def find_image(self, keywords: List[str], post_id: str) -> Dict[str, Any]:
         """
-        Rechercher une image pertinente basée sur les mots-clés.
+        Find a relevant image based on keywords and post content.
         
         Args:
-            keywords: Liste de mots-clés pour la recherche.
-            post_id: ID du post pour lequel chercher une image.
+            keywords: List of keywords for searching.
+            post_id: ID of the post to associate with the image.
             
         Returns:
-            Dictionnaire contenant les informations sur l'image trouvée.
+            Dictionary containing information about the found image.
         """
         try:
-            # Ensure we have some keywords
-            if not keywords:
-                logger.warning(f"No keywords provided for post {post_id}, using default keywords")
-                keywords = ["knowledge", "learning", "information"]
-            
-            # Get the original post title to enhance search relevance
-            title = ""
+            # Get the original post title and content for better context
+            post_title = ""
+            post_content = ""
             try:
-                # Import here to avoid circular imports
-                from database.models import RedditPost
                 with Session() as session:
                     post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
                     if post:
-                        title = post.title
+                        post_title = post.title
+                        post_content = post.content
             except Exception as e:
-                logger.warning(f"Could not retrieve post title: {str(e)}")
+                logger.warning(f"Could not retrieve post details: {str(e)}")
+                # Fall back to keywords if post details can't be retrieved
+                if keywords:
+                    post_title = " ".join(keywords)
             
-            # Extract key topics from the title
-            title_keywords = []
-            if title:
-                # Split title into words, remove short words and common words
-                stop_words = {'the', 'and', 'is', 'in', 'it', 'to', 'a', 'of', 'for', 'with', 
-                              'on', 'at', 'by', 'from', 'that', 'this', 'are', 'was', 'were', 
-                              'what', 'when', 'where', 'how', 'why', 'who', 'will', 'be', 'has',
-                              'have', 'had', 'do', 'does', 'did', 'but', 'or', 'as', 'if', 'so',
-                              'than', 'then', 'no', 'not', 'only', 'til', 'TIL'}
-                title_words = [word.lower() for word in re.findall(r'\b[a-zA-Z]{4,}\b', title)]
-                title_keywords = [word for word in title_words if word not in stop_words][:3]
-            
-            # Combine title keywords and provided keywords, prioritizing title keywords
-            combined_keywords = title_keywords + [k for k in keywords if k not in title_keywords]
-            
-            # Take top keywords and join them for search
-            top_keywords = combined_keywords[:5]  # Limit to 5 keywords for better focus
-            search_query = " ".join(top_keywords)
+            # Use Claude to generate optimized search queries
+            if post_title or post_content:
+                primary_query, alt_queries = self.claude_search.generate_search_queries(
+                    post_title, post_content, post_id, media_type="image"
+                )
+                logger.info(f"Claude generated query for post {post_id}: '{primary_query}'")
+                search_query = primary_query
+            else:
+                # Fallback to basic keyword joining if post details not available
+                search_query = " ".join(keywords[:5])
+                alt_queries = []
             
             logger.debug(f"Searching images for query: {search_query}")
             
-            # Essayer chaque API de recherche d'images dans un ordre prédéfini
-            image_result = None
+            # Try to find an image with the primary query
+            image_result = self._try_all_image_sources(search_query)
             
-            # 1. Essayer Unsplash si une clé API est disponible
-            if self.unsplash_access_key:
-                logger.debug("Trying Unsplash API")
-                image_result = self._search_unsplash(search_query)
+            # If no results with primary query, try alternative queries
+            if not image_result and alt_queries:
+                for alt_query in alt_queries:
+                    logger.info(f"Trying alternative query: '{alt_query}'")
+                    image_result = self._try_all_image_sources(alt_query)
+                    if image_result:
+                        search_query = alt_query  # Update the successful query
+                        break
             
-            # 2. Essayer Pexels si Unsplash a échoué et qu'une clé API est disponible
-            if not image_result and self.pexels_api_key:
-                logger.debug("Trying Pexels API")
-                image_result = self._search_pexels(search_query)
+            # If still no results, fall back to the original keywords
+            if not image_result and keywords:
+                original_query = " ".join(keywords[:5]) 
+                logger.info(f"Trying original keywords: '{original_query}'")
+                image_result = self._try_all_image_sources(original_query)
+                if image_result:
+                    search_query = original_query
             
-            # 3. Essayer Pixabay si les deux précédents ont échoué et qu'une clé API est disponible
-            if not image_result and self.pixabay_api_key:
-                logger.debug("Trying Pixabay API")
-                image_result = self._search_pixabay(search_query)
-            
-            # Si aucune image n'a été trouvée, utiliser l'image de secours
+            # If no image found with any queries, use fallback
             if not image_result:
-                logger.debug("No image found, using fallback")
+                logger.debug("No image found with any query, using fallback")
                 image_result = self._use_fallback_image()
             
-            # Add the search query to the result for reference
+            # Add the successful search query to the result
             image_result['search_query'] = search_query
             
-            # Sauvegarder l'image dans la base de données
+            # Save the image info to the database
             self._save_media_to_db(image_result, post_id)
             
             logger.info(f"Found image for post {post_id}: {image_result['source']} (Query: {search_query})")
@@ -134,23 +130,52 @@ class ImageFinder:
             logger.error(error_msg)
             handle_media_error("image_finding", error_msg, post_id=post_id)
             
-            # En cas d'erreur, utiliser l'image de secours
+            # Use fallback image in case of error
             fallback_result = self._use_fallback_image()
             self._save_media_to_db(fallback_result, post_id)
             return fallback_result
     
-    def _search_unsplash(self, query: str) -> Optional[Dict[str, Any]]:
+    def _try_all_image_sources(self, query: str) -> Optional[Dict[str, Any]]:
         """
-        Rechercher une image sur Unsplash.
+        Try all available image sources with the given query.
         
         Args:
-            query: Terme de recherche.
+            query: Search query string.
             
         Returns:
-            Informations sur l'image ou None si aucune image n'est trouvée.
+            Image information or None if no image found.
+        """
+        # Try each API in sequence, stopping once an image is found
+        image_result = None
+        
+        # 1. Try Unsplash first if available
+        if self.unsplash_access_key:
+            logger.debug("Trying Unsplash API")
+            image_result = self._search_unsplash(query)
+        
+        # 2. Try Pexels if Unsplash failed and API is available
+        if not image_result and self.pexels_api_key:
+            logger.debug("Trying Pexels API")
+            image_result = self._search_pexels(query)
+        
+        # 3. Try Pixabay if both previous APIs failed
+        if not image_result and self.pixabay_api_key:
+            logger.debug("Trying Pixabay API")
+            image_result = self._search_pixabay(query)
+        
+        return image_result
+    
+    def _search_unsplash(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for an image on Unsplash.
+        
+        Args:
+            query: Search query string.
+            
+        Returns:
+            Image information or None if no image found.
         """
         try:
-            # Note: using unsplash_access_key here to match the attribute name
             if not self.unsplash_access_key:
                 logger.warning("No Unsplash access key provided")
                 return None
@@ -159,8 +184,7 @@ class ImageFinder:
             headers = {"Authorization": f"Client-ID {self.unsplash_access_key}"}
             params = {
                 "query": query,
-                "per_page": 10,
-                # Valid values are 'landscape', 'portrait', 'squarish'
+                "per_page": 30,  # Increased from 10 to get more varied results
                 "orientation": "squarish" 
             }
             
@@ -175,8 +199,15 @@ class ImageFinder:
             
             data = response.json()
             if data["results"]:
-                # Choisir une image aléatoire parmi les résultats
-                image = random.choice(data["results"])
+                # Sort results by relevance score if available
+                if "relevance" in data:
+                    results = sorted(data["results"], key=lambda x: x.get("relevance", 0), reverse=True)
+                    # Pick from the top 5 most relevant results
+                    image = random.choice(results[:5]) if len(results) >= 5 else results[0]
+                else:
+                    # Use the top 30% of results to ensure better relevance
+                    top_results = data["results"][:max(3, len(data["results"]) // 3)]
+                    image = random.choice(top_results)
                 
                 # Télécharger l'image
                 image_url = image["urls"]["regular"]
@@ -210,13 +241,13 @@ class ImageFinder:
     
     def _search_pexels(self, query: str) -> Optional[Dict[str, Any]]:
         """
-        Rechercher une image sur Pexels.
+        Search for an image on Pexels.
         
         Args:
-            query: Terme de recherche.
+            query: Search query string.
             
         Returns:
-            Informations sur l'image ou None si aucune image n'est trouvée.
+            Image information or None if no image found.
         """
         try:
             if not self.pexels_api_key:
@@ -227,7 +258,7 @@ class ImageFinder:
             headers = {"Authorization": self.pexels_api_key}
             params = {
                 "query": query,
-                "per_page": 10,
+                "per_page": 30,  # Increased from 10 to get more varied results
                 "size": "medium"
             }
             
@@ -242,11 +273,12 @@ class ImageFinder:
             
             data = response.json()
             if data.get("photos"):
-                # Choisir une image aléatoire parmi les résultats
-                image = random.choice(data["photos"])
+                # Pick from the top results to ensure better relevance
+                top_results = data["photos"][:max(5, len(data["photos"]) // 3)]
+                image = random.choice(top_results)
                 
-                # Télécharger l'image
-                image_url = image["src"]["medium"]
+                # Download the image
+                image_url = image["src"]["large"]
                 image_path = f"media/images/pexels_{image['id']}.jpg"
                 
                 self._download_and_resize_image(image_url, image_path)
@@ -277,13 +309,13 @@ class ImageFinder:
     
     def _search_pixabay(self, query: str) -> Optional[Dict[str, Any]]:
         """
-        Rechercher une image sur Pixabay.
+        Search for an image on Pixabay.
         
         Args:
-            query: Terme de recherche.
+            query: Search query string.
             
         Returns:
-            Informations sur l'image ou None si aucune image n'est trouvée.
+            Image information or None if no image found.
         """
         try:
             if not self.pixabay_api_key:
@@ -294,8 +326,9 @@ class ImageFinder:
             params = {
                 "key": self.pixabay_api_key,
                 "q": query,
-                "per_page": 10,
-                "image_type": "photo"
+                "per_page": 30,  # Increased from 10 to get more varied results
+                "image_type": "photo",
+                "safesearch": "true"
             }
             
             logger.debug(f"Sending request to Pixabay API: {url}")
@@ -309,11 +342,15 @@ class ImageFinder:
             
             data = response.json()
             if data.get("hits"):
-                # Choisir une image aléatoire parmi les résultats
-                image = random.choice(data["hits"])
+                # Sort results by relevance - Pixabay provides metrics we can use
+                results = sorted(data["hits"], key=lambda x: x.get("relevance", 0) + x.get("views", 0)/10000, reverse=True)
                 
-                # Télécharger l'image
-                image_url = image["webformatURL"]
+                # Pick from the top results to ensure better relevance
+                top_results = results[:max(5, len(results) // 3)]
+                image = random.choice(top_results)
+                
+                # Download the image
+                image_url = image["largeImageURL"]
                 image_path = f"media/images/pixabay_{image['id']}.jpg"
                 
                 self._download_and_resize_image(image_url, image_path)
@@ -344,10 +381,10 @@ class ImageFinder:
     
     def _use_fallback_image(self) -> Dict[str, Any]:
         """
-        Utiliser l'image de secours lorsqu'aucune image pertinente n'est trouvée.
+        Use the fallback image when no relevant image is found.
         
         Returns:
-            Informations sur l'image de secours.
+            Information about the fallback image.
         """
         # Ensure fallback image exists or create a default one
         if not self.fallback_image_path or not os.path.exists(self.fallback_image_path):
@@ -363,7 +400,8 @@ class ImageFinder:
             "source_url": None,
             "width": self.image_width,
             "height": self.image_height,
-            "keywords": "generic,fallback"
+            "keywords": "generic,fallback",
+            "search_query": "fallback"
         }
     
     def _create_default_image(self) -> Dict[str, Any]:
@@ -398,7 +436,8 @@ class ImageFinder:
                 "source_url": None,
                 "width": self.image_width,
                 "height": self.image_height,
-                "keywords": "generic,fallback"
+                "keywords": "generic,fallback",
+                "search_query": "fallback"
             }
         except Exception as e:
             logger.error(f"Error creating default image: {str(e)}")
@@ -413,31 +452,32 @@ class ImageFinder:
                 "source_url": None,
                 "width": 1080,
                 "height": 1080,
-                "keywords": "generic,fallback"
+                "keywords": "generic,fallback",
+                "search_query": "fallback"
             }
     
     def _download_and_resize_image(self, url: str, save_path: str) -> None:
         """
-        Télécharger et redimensionner une image.
+        Download and resize an image.
         
         Args:
-            url: URL de l'image à télécharger.
-            save_path: Chemin où sauvegarder l'image.
+            url: URL of the image to download.
+            save_path: Path where to save the image.
         """
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             
-            # Ouvrir l'image avec PIL
+            # Open the image with PIL
             image = Image.open(BytesIO(response.content))
             
-            # Redimensionner l'image pour Instagram (ratio carré)
+            # Resize the image for Instagram (square ratio)
             resized_image = self._resize_image(image)
             
             # Ensure the directory exists
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             
-            # Sauvegarder l'image redimensionnée
+            # Save the resized image
             resized_image.save(save_path, "JPEG", quality=95)
             
             logger.debug(f"Image downloaded and saved to {save_path}")
@@ -447,18 +487,18 @@ class ImageFinder:
     
     def _resize_image(self, image: Image.Image) -> Image.Image:
         """
-        Redimensionner une image pour les réseaux sociaux.
+        Resize an image for social media.
         
         Args:
-            image: Image PIL à redimensionner.
+            image: PIL Image object to resize.
             
         Returns:
-            Image redimensionnée.
+            Resized PIL Image object.
         """
-        # Créer une image carrée (recadrer puis redimensionner)
+        # Create a square image (crop then resize)
         width, height = image.size
         
-        # Recadrer pour obtenir un carré
+        # Crop to obtain a square
         if width > height:
             left = (width - height) // 2
             top = 0
@@ -472,18 +512,18 @@ class ImageFinder:
             
         image = image.crop((left, top, right, bottom))
         
-        # Redimensionner à la taille souhaitée
-        image = image.resize((self.image_width, self.image_height), Image.LANCZOS)
+        # Resize to the desired size
+        image = image.resize((self.image_width, self.image_height), Image.Resampling.LANCZOS)
         
         return image
     
     def _save_media_to_db(self, media_data: Dict[str, Any], post_id: str) -> None:
         """
-        Enregistrer les données de l'image dans la base de données.
+        Save image data to the database.
         
         Args:
-            media_data: Informations sur l'image.
-            post_id: ID du post associé.
+            media_data: Information about the image.
+            post_id: ID of the associated post.
         """
         try:
             with Session() as session:
@@ -496,33 +536,33 @@ class ImageFinder:
                     # Update existing record
                     existing_media.media_type = media_data["media_type"]
                     existing_media.file_path = media_data["file_path"]
-                    existing_media.source_url = media_data["source_url"]
+                    existing_media.source_url = media_data.get("url")
                     existing_media.source = media_data["source"]
                     existing_media.source_id = media_data["source_id"]
                     existing_media.width = media_data["width"]
                     existing_media.height = media_data["height"]
-                    existing_media.keywords = media_data["keywords"]
+                    existing_media.keywords = media_data.get("keywords", "")
                     # Save search query if available
                     if "search_query" in media_data:
                         existing_media.search_query = media_data["search_query"]
                     existing_media.updated_at = datetime.now()
                 else:
-                    # Mettre à jour le statut du contenu traité
+                    # Update the processed content status
                     processed_content = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()
                     if processed_content:
                         processed_content.has_media = True
                     
-                    # Créer une nouvelle entrée pour le contenu média
+                    # Create a new entry for the media content
                     media_content = MediaContent(
                         reddit_id=post_id,
                         media_type=media_data["media_type"],
                         file_path=media_data["file_path"],
-                        source_url=media_data["source_url"],
+                        source_url=media_data.get("url"),
                         source=media_data["source"],
                         source_id=media_data["source_id"],
                         width=media_data["width"],
                         height=media_data["height"],
-                        keywords=media_data["keywords"],
+                        keywords=media_data.get("keywords", ""),
                         search_query=media_data.get("search_query", "")
                     )
                     
