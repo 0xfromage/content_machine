@@ -1,4 +1,3 @@
-# main.py
 import logging
 import time
 import argparse
@@ -11,7 +10,6 @@ from config.settings import config
 from database.models import init_db, Session, RedditPost, ProcessedContent
 from core.scraper.reddit_scraper import RedditScraper
 from core.processor.text_processor import TextProcessor
-from core.media.image_finder import ImageFinder
 from utils.claude_client import ClaudeClient
 from utils.logger import setup_logging
 
@@ -101,6 +99,9 @@ def process_content(posts=None):
 def find_media():
     """Rechercher des médias pour les posts traités."""
     logging.info("Démarrage de la recherche de média...")
+    from core.media.video_finder import VideoFinder
+    from core.media.image_finder import ImageFinder
+    video_finder = VideoFinder()
     image_finder = ImageFinder()
     
     # Récupérer les contenus traités sans média
@@ -125,15 +126,34 @@ def find_media():
                         # Utiliser le titre comme source de mots-clés
                         keywords = reddit_post.title.split()[:5]  # Utiliser les 5 premiers mots du titre
                 
-                # Si des mots-clés sont disponibles, rechercher une image
+                # Si des mots-clés sont disponibles, rechercher d'abord une vidéo, puis une image en fallback
                 if keywords:
-                    image_finder.find_image(keywords, content.reddit_id)
-                    logging.info(f"Média trouvé pour le post {content.reddit_id}")
+                    try:
+                        # First try to find a video
+                        logging.info(f"Searching for a video for post {content.reddit_id}...")
+                        video_result = video_finder.find_video(keywords, content.reddit_id)
+                        
+                        # Check if a real video was found (not just a fallback)
+                        if video_result and video_result.get('source') != 'fallback':
+                            logging.info(f"Video found for post {content.reddit_id} from source: {video_result.get('source')}")
+                            continue  # Skip to next content since we found a video
+                        else:
+                            logging.info(f"No relevant video found for post {content.reddit_id}, falling back to image search")
+                    except Exception as v_error:
+                        logging.error(f"Error while searching for video: {str(v_error)}")
+                        
+                    # If no video or error occurred, try finding an image
+                    try:
+                        logging.info(f"Searching for an image for post {content.reddit_id}...")
+                        image_result = image_finder.find_image(keywords, content.reddit_id)
+                        logging.info(f"Image found for post {content.reddit_id} from source: {image_result.get('source')}")
+                    except Exception as i_error:
+                        logging.error(f"Error while searching for image: {str(i_error)}")
                 else:
-                    logging.warning(f"Pas de mots-clés disponibles pour le post {content.reddit_id}")
+                    logging.warning(f"No keywords available for post {content.reddit_id}")
                     
             except Exception as e:
-                logging.error(f"Erreur lors de la recherche de média pour le post {content.reddit_id}: {str(e)}")
+                logging.error(f"Error during media search for post {content.reddit_id}: {str(e)}")
     
     logging.info("Recherche de média terminée.")
 

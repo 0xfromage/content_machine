@@ -399,7 +399,7 @@ class ContentValidatorApp:
                 
                 with col2:
                     # Onglets pour les différentes plateformes
-                    tabs = st.tabs(["Instagram", "TikTok", "Original"])
+                    tabs = st.tabs(["Instagram", "TikTok", "Original", "Reddit Link"])
                     
                     with tabs[0]:
                         st.subheader("Instagram Caption")
@@ -423,7 +423,27 @@ class ContentValidatorApp:
                         st.subheader("Contenu Original")
                         st.write(f"**Titre:** {content['title']}")
                         st.write(f"**Contenu:**\n{content['content']}")
-                        st.write(f"**Lien Reddit:** [Voir sur Reddit](https://reddit.com{content['permalink']})")
+                    
+                    with tabs[3]:
+                        st.subheader("Lien Reddit Original")
+                        reddit_url = f"https://reddit.com{content['permalink']}"
+                        st.write(f"[Voir le post original sur Reddit]({reddit_url})")
+                        
+                        # Add a copy button for the URL
+                        if st.button("Copier le lien", key=f"copy_link_{content['reddit_id']}"):
+                            st.code(reddit_url, language=None)
+                            st.success("Lien copié! (Sélectionnez et copiez manuellement)")
+                            
+                        # Display search parameters if available
+                        # Create a new session for this query
+                        with Session() as query_session:
+                            media_content = query_session.query(MediaContent).filter_by(reddit_id=content['reddit_id']).first()
+                            if media_content:
+                                st.write("**Termes de recherche pour les médias:**")
+                                if hasattr(media_content, 'search_query') and media_content.search_query:
+                                    st.code(media_content.search_query)
+                                else:
+                                    st.code(media_content.keywords if media_content.keywords else "Aucun terme de recherche enregistré")
                     
                     # Choix des plateformes de publication
                     st.subheader("Options de publication")
@@ -433,6 +453,7 @@ class ContentValidatorApp:
                         default=["Instagram", "TikTok"],
                         key=f"platforms_{content['reddit_id']}"
                     )
+
                 
                 # Actions
                 col1, col2, col3 = st.columns(3)

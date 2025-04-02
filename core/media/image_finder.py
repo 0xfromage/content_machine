@@ -1,19 +1,24 @@
-# core/media/image_finder.py
 import os
 import logging
 import requests
 import random
+import re
+import sys
 from typing import Dict, List, Any, Optional
 from PIL import Image
 from io import BytesIO
 import time
 from datetime import datetime
 
+# Make sure parent directory is in the path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from config.settings import config
 from utils.error_handler import handle_media_error
-from database.models import ProcessedContent, MediaContent, Session
+from database.models import Session, RedditPost, ProcessedContent, MediaContent
 
 logger = logging.getLogger(__name__)
+
 
 class ImageFinder:
     """Classe pour rechercher des images pertinentes basées sur les mots-clés."""
@@ -58,9 +63,38 @@ class ImageFinder:
             if not keywords:
                 logger.warning(f"No keywords provided for post {post_id}, using default keywords")
                 keywords = ["knowledge", "learning", "information"]
-                
-            # Joindre les mots-clés en une seule chaîne de recherche
-            search_query = " ".join(keywords[:3])  # Limiter à 3 mots-clés pour de meilleurs résultats
+            
+            # Get the original post title to enhance search relevance
+            title = ""
+            try:
+                # Import here to avoid circular imports
+                from database.models import RedditPost
+                with Session() as session:
+                    post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
+                    if post:
+                        title = post.title
+            except Exception as e:
+                logger.warning(f"Could not retrieve post title: {str(e)}")
+            
+            # Extract key topics from the title
+            title_keywords = []
+            if title:
+                # Split title into words, remove short words and common words
+                stop_words = {'the', 'and', 'is', 'in', 'it', 'to', 'a', 'of', 'for', 'with', 
+                              'on', 'at', 'by', 'from', 'that', 'this', 'are', 'was', 'were', 
+                              'what', 'when', 'where', 'how', 'why', 'who', 'will', 'be', 'has',
+                              'have', 'had', 'do', 'does', 'did', 'but', 'or', 'as', 'if', 'so',
+                              'than', 'then', 'no', 'not', 'only', 'til', 'TIL'}
+                title_words = [word.lower() for word in re.findall(r'\b[a-zA-Z]{4,}\b', title)]
+                title_keywords = [word for word in title_words if word not in stop_words][:3]
+            
+            # Combine title keywords and provided keywords, prioritizing title keywords
+            combined_keywords = title_keywords + [k for k in keywords if k not in title_keywords]
+            
+            # Take top keywords and join them for search
+            top_keywords = combined_keywords[:5]  # Limit to 5 keywords for better focus
+            search_query = " ".join(top_keywords)
+            
             logger.debug(f"Searching images for query: {search_query}")
             
             # Essayer chaque API de recherche d'images dans un ordre prédéfini
@@ -86,10 +120,13 @@ class ImageFinder:
                 logger.debug("No image found, using fallback")
                 image_result = self._use_fallback_image()
             
+            # Add the search query to the result for reference
+            image_result['search_query'] = search_query
+            
             # Sauvegarder l'image dans la base de données
             self._save_media_to_db(image_result, post_id)
             
-            logger.info(f"Found image for post {post_id}: {image_result['source']}")
+            logger.info(f"Found image for post {post_id}: {image_result['source']} (Query: {search_query})")
             return image_result
             
         except Exception as e:
@@ -465,6 +502,9 @@ class ImageFinder:
                     existing_media.width = media_data["width"]
                     existing_media.height = media_data["height"]
                     existing_media.keywords = media_data["keywords"]
+                    # Save search query if available
+                    if "search_query" in media_data:
+                        existing_media.search_query = media_data["search_query"]
                     existing_media.updated_at = datetime.now()
                 else:
                     # Mettre à jour le statut du contenu traité
@@ -482,7 +522,8 @@ class ImageFinder:
                         source_id=media_data["source_id"],
                         width=media_data["width"],
                         height=media_data["height"],
-                        keywords=media_data["keywords"]
+                        keywords=media_data["keywords"],
+                        search_query=media_data.get("search_query", "")
                     )
                     
                     session.add(media_content)

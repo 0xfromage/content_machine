@@ -88,6 +88,7 @@ class MediaContent(Base):
     width = Column(Integer)
     height = Column(Integer)
     keywords = Column(Text)  # Mots-clés utilisés pour trouver l'image
+    search_query = Column(Text)  # Requête de recherche utilisée
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     

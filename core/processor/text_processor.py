@@ -199,11 +199,33 @@ class TextProcessor:
         # Ajouter quelques emojis pertinents
         emojis = emoji.emojize(":sparkles: :bulb: :brain: :nerd_face:")
         
+        # Shorten the title (remove "TIL" prefix if present and limit length)
+        short_title = title
+        if short_title.startswith("TIL "):
+            short_title = short_title[4:]
+        elif short_title.startswith("TIL that "):
+            short_title = short_title[9:]
+        
+        # Limit title length and ensure it ends with punctuation
+        if len(short_title) > 100:
+            short_title = short_title[:97] + "..."
+        elif not short_title.endswith(('.', '!', '?')):
+            short_title = short_title + "."
+        
         # Combiner le titre et le contenu
         if content:
-            main_text = f"{emojis} {title}\n\n{content[:500]}..."
+            # Extract a brief excerpt from the content (first sentence or two)
+            content_excerpt = content.split('.')
+            excerpt = content_excerpt[0]
+            if len(excerpt) < 100 and len(content_excerpt) > 1:
+                excerpt += ". " + content_excerpt[1]
+                
+            if len(excerpt) > 300:
+                excerpt = excerpt[:297] + "..."
+                
+            main_text = f"{emojis} {short_title}\n\n{excerpt}"
         else:
-            main_text = f"{emojis} {title}"
+            main_text = f"{emojis} {short_title}"
         
         # Ajouter la source
         source_text = "\n\nSource: Reddit"
@@ -220,6 +242,60 @@ class TextProcessor:
             excess = len(full_caption) - config.instagram.max_caption_length
             main_text = main_text[:-excess-3] + "..."
             full_caption = f"{main_text}{source_text}\n\n{instagram_hashtags}"
+        
+        return full_caption
+    
+    def _format_for_tiktok(self, title: str, content: str, hashtags: List[str]) -> str:
+        """
+        Formater le contenu pour TikTok.
+        
+        Args:
+            title: Titre nettoyé.
+            content: Contenu nettoyé.
+            hashtags: Liste de hashtags.
+            
+        Returns:
+            Texte formaté pour TikTok.
+        """
+        # Shorten the title (remove "TIL" prefix and keep it very brief)
+        short_title = title
+        if short_title.startswith("TIL "):
+            short_title = short_title[4:]
+        elif short_title.startswith("TIL that "):
+            short_title = short_title[9:]
+            
+        # Very aggressive shortening for TikTok
+        if len(short_title) > 60:
+            # Look for a logical breaking point
+            breaking_points = ['. ', '? ', '! ', ': ', ' - ']
+            for point in breaking_points:
+                pos = short_title.find(point, 30, 60)
+                if pos > 0:
+                    short_title = short_title[:pos+1]
+                    break
+            else:
+                # No good breaking point found, just truncate
+                short_title = short_title[:57] + "..."
+        
+        # Add an emoji at the beginning
+        if not any(c for c in short_title if c in "✨🔍💡🧠"):
+            short_title = "💡 " + short_title
+            
+        # For TikTok, just use the shortened title
+        main_text = short_title
+        
+        # Ajouter les hashtags les plus importants
+        tiktok_hashtags = " ".join(hashtags[:min(config.tiktok.max_hashtags, 3)])  # Even fewer hashtags
+        
+        # Assembler le tout
+        full_caption = f"{main_text}\n{tiktok_hashtags}"
+        
+        # S'assurer que la longueur est correcte pour TikTok
+        if len(full_caption) > config.tiktok.max_caption_length:
+            # Réduire le texte principal pour tenir dans la limite
+            excess = len(full_caption) - config.tiktok.max_caption_length
+            main_text = main_text[:-excess-3] + "..."
+            full_caption = f"{main_text}\n{tiktok_hashtags}"
         
         return full_caption
     

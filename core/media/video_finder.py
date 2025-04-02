@@ -1,8 +1,8 @@
-# core/media/video_finder.py
 import os
 import logging
 import requests
 import random
+import re
 from typing import Dict, List, Any, Optional
 import time
 import tempfile
@@ -41,10 +41,10 @@ except (ImportError, Exception) as e:
             return None
             
     VideoFileClip = ImageClip = TextClip = ColorClip = CompositeVideoClip = DummyClip
-    
+
 from config.settings import config
 from utils.error_handler import handle_media_error
-from database.models import ProcessedContent, MediaContent, Session
+from database.models import ProcessedContent, MediaContent, Session, RedditPost
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,34 @@ class VideoFinder:
             if not keywords:
                 logger.warning(f"No keywords provided for post {post_id}, using default keywords")
                 keywords = ["knowledge", "learning", "information"]
+            
+            # Get the original post title to enhance search relevance
+            title = ""
+            with Session() as session:
+                post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
+                if post:
+                    title = post.title
+            
+            # Extract key topics from the title
+            title_keywords = []
+            if title:
+                # Split title into words, remove short words and common words
+                stop_words = {'the', 'and', 'is', 'in', 'it', 'to', 'a', 'of', 'for', 'with', 
+                              'on', 'at', 'by', 'from', 'that', 'this', 'are', 'was', 'were', 
+                              'what', 'when', 'where', 'how', 'why', 'who', 'will', 'be', 'has',
+                              'have', 'had', 'do', 'does', 'did', 'but', 'or', 'as', 'if', 'so',
+                              'than', 'then', 'no', 'not', 'only', 'til', 'TIL'}
+                title_words = [word.lower() for word in re.findall(r'\b[a-zA-Z]{4,}\b', title)]
+                title_keywords = [word for word in title_words if word not in stop_words][:3]
+            
+            # Combine title keywords and provided keywords, prioritizing title keywords
+            combined_keywords = title_keywords + [k for k in keywords if k not in title_keywords]
+            
+            # Take top keywords and join them for search
+            top_keywords = combined_keywords[:5]  # Limit to 5 keywords for better focus
+            search_query = " ".join(top_keywords)
                 
             # Joindre les mots-clés en une seule chaîne de recherche
-            search_query = " ".join(keywords[:3])  # Limiter à 3 mots-clés pour de meilleurs résultats
             logger.debug(f"Searching videos for query: {search_query}")
             
             # Essayer chaque API de recherche de vidéos dans un ordre prédéfini
@@ -112,10 +137,13 @@ class VideoFinder:
                     logger.error(f"Error using fallback video: {str(e)}")
                     video_result = self._create_minimal_video_info()
             
+            # Add the search query to the result for reference
+            video_result['search_query'] = search_query
+            
             # Sauvegarder la vidéo dans la base de données
             self._save_media_to_db(video_result, post_id)
             
-            logger.info(f"Found video for post {post_id}: {video_result['source']}")
+            logger.info(f"Found video for post {post_id}: {video_result['source']} (Query: {search_query})")
             return video_result
             
         except Exception as e:
@@ -123,7 +151,7 @@ class VideoFinder:
             logger.error(error_msg)
             handle_media_error("video_finding", error_msg, post_id=post_id)
             
-            # En cas d'erreur, utiliser la vidéo de secours ou une info minimale
+            # En cas d'erreur, utiliser la vidéo de secours
             try:
                 fallback_result = self._use_fallback_video()
             except Exception as fallback_error:
