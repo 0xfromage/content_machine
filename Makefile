@@ -20,8 +20,9 @@ init-db:
 run:
 	python main.py --all
 
+# Updated web target to use the wrapper script
 web:
-	streamlit run web_interface/app.py
+	python run_streamlit.py
 
 test-setup:
 	python tests/setup_test_env.py

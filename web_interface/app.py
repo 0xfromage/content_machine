@@ -1,10 +1,13 @@
-# web_interface/app.py
 import streamlit as st
 import pandas as pd
 import os
 import logging
+import sys
 from datetime import datetime
 from PIL import Image
+
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config.settings import config
 from database.models import Session, RedditPost, ProcessedContent, MediaContent

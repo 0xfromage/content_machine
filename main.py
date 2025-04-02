@@ -141,11 +141,47 @@ def launch_validation_interface():
     """Lancer l'interface de validation Streamlit."""
     try:
         import subprocess
-        streamlit_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_interface", "app.py")
-        subprocess.Popen(["streamlit", "run", streamlit_path])
-        logging.info(f"Interface de validation Streamlit lancée: http://localhost:{config.web_interface_port}")
+        import sys
+        import webbrowser
+        import time
+        from pathlib import Path
+        
+        # Get the port from config
+        port = config.web_interface_port
+        host = "localhost"
+        url = f"http://{host}:{port}"
+        
+        # Path to the run_streamlit.py script
+        streamlit_wrapper = Path(__file__).parent / "run_streamlit.py"
+        
+        # Launch using our wrapper script
+        logging.info(f"Launching Streamlit through wrapper script: {streamlit_wrapper}")
+        
+        # Run in a subprocess
+        process = subprocess.Popen([sys.executable, str(streamlit_wrapper)],
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT,
+                                  universal_newlines=True)
+        
+        # Wait a moment for Streamlit to start
+        time.sleep(3)
+        
+        # Open the browser automatically
+        webbrowser.open(url)
+        
+        # Print the URL
+        logging.info(f"Interface de validation Streamlit lancée: {url}")
+        print(f"\n✅ Interface de validation lancée: {url}")
+        print(f"Si votre navigateur ne s'ouvre pas automatiquement, visitez: {url}\n")
+        
+        # Return the process object so it can be terminated later if needed
+        return process
+        
     except Exception as e:
         logging.error(f"Erreur lors du lancement de l'interface Streamlit: {str(e)}")
+        print(f"\n❌ Erreur lors du lancement de l'interface: {str(e)}")
+        return None
+
 
 def run_pipeline(scrape=True, process=True, media=True, validate=True):
     """Exécuter le pipeline complet."""
