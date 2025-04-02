@@ -10,7 +10,7 @@ from PIL import Image
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config.settings import config
-from database.models import Session, RedditPost, ProcessedContent, MediaContent
+from database.models import Session, RedditPost, ProcessedContent, MediaContent, Base, PublishLog, AIGenerationLog
 from core.publisher.instagram_publisher import InstagramPublisher
 from core.publisher.tiktok_publisher import TikTokPublisher
 
@@ -30,6 +30,13 @@ class ContentValidatorApp:
             page_icon="🤖",
             layout="wide"
         )
+        
+        # Initialize session state for selections if not exists
+        if 'selected_scraped_posts' not in st.session_state:
+            st.session_state.selected_scraped_posts = set()
+        
+        if 'selected_contents' not in st.session_state:
+            st.session_state.selected_contents = set()
     
     def run(self):
         """Exécuter l'application Streamlit."""
@@ -71,25 +78,51 @@ class ContentValidatorApp:
             if not scraped_posts:
                 st.info("Aucun nouveau contenu scrapé à traiter.")
                 return
-                
-            # Option de sélection en masse
-            all_ids = [post.reddit_id for post in scraped_posts]
-            selected_posts = st.multiselect(
-                "Sélectionner plusieurs posts pour action en masse",
-                options=all_ids,
-                format_func=lambda x: session.query(RedditPost).filter_by(reddit_id=x).first().title
-            )
+            
+            # Option de sélection en masse avec checkboxes
+            st.write("### Sélection en masse")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write("Sélectionner les posts pour action en masse:")
+            with col2:
+                if st.button("Tout sélectionner / Désélectionner"):
+                    if len(st.session_state.selected_scraped_posts) == len(scraped_posts):
+                        # If all are selected, deselect all
+                        st.session_state.selected_scraped_posts = set()
+                    else:
+                        # Otherwise select all
+                        st.session_state.selected_scraped_posts = {post.reddit_id for post in scraped_posts}
+                    st.rerun()
+            
+            # Display checkboxes for each post
+            for post in scraped_posts:
+                checkbox_key = f"checkbox_scraped_{post.reddit_id}"
+                is_checked = post.reddit_id in st.session_state.selected_scraped_posts
+                if st.checkbox(
+                    f"{post.title[:50]}..." if len(post.title) > 50 else post.title,
+                    value=is_checked,
+                    key=checkbox_key
+                ):
+                    st.session_state.selected_scraped_posts.add(post.reddit_id)
+                elif post.reddit_id in st.session_state.selected_scraped_posts:
+                    st.session_state.selected_scraped_posts.remove(post.reddit_id)
+            
+            # Get the selected posts
+            selected_posts = list(st.session_state.selected_scraped_posts)
             
             # Actions en masse
             if selected_posts:
-                col1, col2 = st.columns(2)
+                st.write(f"**{len(selected_posts)} posts sélectionnés**")
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.button("Traiter la sélection"):
                         for post_id in selected_posts:
                             # Mettre à jour le statut pour traitement
                             post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
-                            post.status = 'pending_processing'
+                            if post:
+                                post.status = 'pending_processing'
                         session.commit()
+                        st.session_state.selected_scraped_posts = set()
                         st.success(f"{len(selected_posts)} posts marqués pour traitement")
                         st.rerun()
                 
@@ -97,9 +130,18 @@ class ContentValidatorApp:
                     if st.button("Supprimer la sélection"):
                         for post_id in selected_posts:
                             post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
-                            session.delete(post)
+                            if post:
+                                session.delete(post)
                         session.commit()
+                        st.session_state.selected_scraped_posts = set()
                         st.success(f"{len(selected_posts)} posts supprimés")
+                        st.rerun()
+                
+                with col3:
+                    if st.button("Supprimer définitivement la sélection"):
+                        self._permanently_delete_posts(selected_posts)
+                        st.session_state.selected_scraped_posts = set()
+                        st.success(f"{len(selected_posts)} posts supprimés définitivement")
                         st.rerun()
             
             # Afficher chaque post individuellement
@@ -115,7 +157,7 @@ class ContentValidatorApp:
                             st.write(post.content)
                     
                     # Actions individuelles
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         edit_title = st.text_input("Titre", post.title, key=f"title_{post.reddit_id}")
                         edit_content = st.text_area("Contenu", post.content, key=f"content_{post.reddit_id}")
@@ -138,6 +180,12 @@ class ContentValidatorApp:
                             session.delete(post)
                             session.commit()
                             st.success("Post supprimé")
+                            st.rerun()
+                    
+                    with col4:
+                        if st.button("Supprimer définitivement", key=f"perm_delete_post_{post.reddit_id}"):
+                            self._permanently_delete_posts([post.reddit_id])
+                            st.success("Post supprimé définitivement")
                             st.rerun()
     
     def _show_content_to_validate(self):
@@ -270,7 +318,8 @@ class ContentValidatorApp:
                         'published_instagram': processed_content.published_instagram,
                         'published_tiktok': processed_content.published_tiktok,
                         'media_path': media_content.file_path if media_content else None,
-                        'media_source': media_content.source if media_content else None
+                        'media_source': media_content.source if media_content else None,
+                        'media_type': media_content.media_type if media_content else None
                     }
                     contents.append(content)
                 
@@ -288,17 +337,41 @@ class ContentValidatorApp:
         Args:
             contents: Liste de contenus à afficher.
         """
-        # Option de sélection en masse
-        content_ids = [content['reddit_id'] for content in contents]
-        selected_contents = st.multiselect(
-            "Sélectionner plusieurs contenus pour action en masse",
-            options=content_ids,
-            format_func=lambda x: next((c['title'][:50] + "..." if len(c['title']) > 50 else c['title'] for c in contents if c['reddit_id'] == x), x)
-        )
+        # Option de sélection en masse avec checkboxes
+        st.write("### Sélection en masse")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.write("Sélectionner les contenus pour action en masse:")
+        with col2:
+            if st.button("Tout sélectionner / Désélectionner"):
+                if len(st.session_state.selected_contents) == len(contents):
+                    # If all are selected, deselect all
+                    st.session_state.selected_contents = set()
+                else:
+                    # Otherwise select all
+                    st.session_state.selected_contents = {content['reddit_id'] for content in contents}
+                st.rerun()
+        
+        # Display checkboxes for each content
+        for content in contents:
+            checkbox_key = f"checkbox_content_{content['reddit_id']}"
+            is_checked = content['reddit_id'] in st.session_state.selected_contents
+            if st.checkbox(
+                f"{content['title'][:50]}..." if len(content['title']) > 50 else content['title'],
+                value=is_checked,
+                key=checkbox_key
+            ):
+                st.session_state.selected_contents.add(content['reddit_id'])
+            elif content['reddit_id'] in st.session_state.selected_contents:
+                st.session_state.selected_contents.remove(content['reddit_id'])
+        
+        # Get the selected contents
+        selected_contents = list(st.session_state.selected_contents)
         
         # Actions en masse
         if selected_contents:
-            col1, col2, col3 = st.columns(3)
+            st.write(f"**{len(selected_contents)} contenus sélectionnés**")
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 if st.button("Valider la sélection"):
                     for content_id in selected_contents:
@@ -310,6 +383,7 @@ class ContentValidatorApp:
                                 content['instagram_caption'], 
                                 content['tiktok_caption']
                             )
+                    st.session_state.selected_contents = set()
                     st.success(f"{len(selected_contents)} contenus validés!")
                     st.rerun()
             
@@ -324,14 +398,23 @@ class ContentValidatorApp:
                                 content['instagram_caption'], 
                                 content['tiktok_caption']
                             )
+                    st.session_state.selected_contents = set()
                     st.success(f"{len(selected_contents)} contenus rejetés!")
                     st.rerun()
             
             with col3:
+                if st.button("Supprimer définitivement la sélection"):
+                    self._permanently_delete_contents(selected_contents)
+                    st.session_state.selected_contents = set()
+                    st.success(f"{len(selected_contents)} contenus supprimés définitivement!")
+                    st.rerun()
+            
+            with col4:
                 platforms = st.multiselect(
-                    "Choisir les plateformes pour la publication en masse",
+                    "Plateformes",
                     options=["Instagram", "TikTok"],
-                    default=["Instagram", "TikTok"]
+                    default=["Instagram", "TikTok"],
+                    key="platforms_mass_publish"
                 )
                 
                 if st.button("Publier la sélection"):
@@ -359,6 +442,7 @@ class ContentValidatorApp:
                             if success:
                                 success_count += 1
                     
+                    st.session_state.selected_contents = set()
                     st.success(f"{success_count}/{len(selected_contents)} contenus publiés avec succès!")
                     st.rerun()
         
@@ -375,15 +459,22 @@ class ContentValidatorApp:
                     st.write(f"**Subreddit:** r/{content['subreddit']}")
                     st.write(f"**Upvotes:** {content['upvotes']}")
                     
-                    # Afficher l'image
+                    # Afficher le média (image ou vidéo)
                     if content['media_path'] and os.path.exists(content['media_path']):
-                        try:
-                            image = Image.open(content['media_path'])
-                            st.image(image, caption=f"Source: {content['media_source']}")
-                        except Exception as e:
-                            st.error(f"Erreur lors de l'affichage de l'image: {str(e)}")
+                        if content['media_type'] == 'video':
+                            try:
+                                st.video(content['media_path'], format="video/mp4")
+                                st.caption(f"Source: {content['media_source']}")
+                            except Exception as e:
+                                st.error(f"Erreur lors de l'affichage de la vidéo: {str(e)}")
+                        else:  # image par défaut
+                            try:
+                                image = Image.open(content['media_path'])
+                                st.image(image, caption=f"Source: {content['media_source']}")
+                            except Exception as e:
+                                st.error(f"Erreur lors de l'affichage de l'image: {str(e)}")
                     else:
-                        st.warning("Aucune image disponible")
+                        st.warning("Aucun média disponible")
                     
                     # Statut de publication
                     st.subheader("Statut de publication")
@@ -456,7 +547,7 @@ class ContentValidatorApp:
 
                 
                 # Actions
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     if st.button("Valider", key=f"validate_{content['reddit_id']}"):
@@ -481,6 +572,12 @@ class ContentValidatorApp:
                         st.rerun()
                 
                 with col3:
+                    if st.button("Supprimer définitivement", key=f"perm_delete_{content['reddit_id']}"):
+                        self._permanently_delete_contents([content['reddit_id']])
+                        st.success("Contenu supprimé définitivement!")
+                        st.rerun()
+                
+                with col4:
                     if st.button("Publier", key=f"publish_{content['reddit_id']}"):
                         success_messages = []
                         
@@ -616,6 +713,95 @@ class ContentValidatorApp:
             logger.error(f"Error publishing to TikTok: {str(e)}")
             st.error(f"Erreur lors de la publication sur TikTok: {str(e)}")
             return False
+    
+    def _permanently_delete_posts(self, post_ids):
+        """
+        Supprimer définitivement des posts Reddit et toutes les données associées.
+        
+        Args:
+            post_ids: Liste des IDs des posts à supprimer.
+            
+        Returns:
+            True si la suppression a réussi, False sinon.
+        """
+        if not post_ids:
+            logger.warning("Aucun post à supprimer")
+            return True
+            
+        try:
+            with Session() as session:
+                for post_id in post_ids:
+                    try:
+                        # Vérifier si le post existe
+                        post = session.query(RedditPost).filter_by(reddit_id=post_id).first()
+                        if not post:
+                            logger.warning(f"Post {post_id} non trouvé, passage au suivant")
+                            continue
+                            
+                        # Supprimer les entrées associées dans toutes les tables
+                        # Essayer de supprimer les logs de publication s'ils existent
+                        try:
+                            # Vérifier si la table PublishLog existe
+                            if 'publish_logs' in Base.metadata.tables:
+                                session.query(PublishLog).filter_by(reddit_id=post_id).delete()
+                        except Exception as e:
+                            logger.warning(f"Erreur lors de la suppression des logs de publication: {str(e)}")
+                        
+                        # Essayer de supprimer les logs de génération AI s'ils existent
+                        try:
+                            # Vérifier si la table AIGenerationLog existe
+                            if 'ai_generation_logs' in Base.metadata.tables:
+                                session.query(AIGenerationLog).filter_by(reddit_id=post_id).delete()
+                        except Exception as e:
+                            logger.warning(f"Erreur lors de la suppression des logs de génération AI: {str(e)}")
+                        
+                        # Supprimer le contenu média
+                        media = session.query(MediaContent).filter_by(reddit_id=post_id).first()
+                        if media:
+                            # Supprimer le fichier média si nécessaire
+                            if media.file_path and os.path.exists(media.file_path):
+                                try:
+                                    os.remove(media.file_path)
+                                    logger.info(f"Fichier média supprimé: {media.file_path}")
+                                except Exception as e:
+                                    logger.warning(f"Impossible de supprimer le fichier média: {str(e)}")
+                            
+                            session.delete(media)
+                        
+                        # Supprimer le contenu traité
+                        processed = session.query(ProcessedContent).filter_by(reddit_id=post_id).first()
+                        if processed:
+                            session.delete(processed)
+                        
+                        # Supprimer le post Reddit
+                        session.delete(post)
+                        
+                        # Commit pour chaque post pour éviter de perdre tout le travail si un post échoue
+                        session.commit()
+                        logger.info(f"Post {post_id} supprimé avec succès")
+                        
+                    except Exception as e:
+                        # Log l'erreur mais continue avec les autres posts
+                        logger.error(f"Erreur lors de la suppression du post {post_id}: {str(e)}")
+                        session.rollback()
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error permanently deleting posts: {str(e)}")
+            st.error(f"Erreur lors de la suppression définitive des posts: {str(e)}")
+            return False
+    
+    def _permanently_delete_contents(self, content_ids):
+        """
+        Supprimer définitivement des contenus traités et toutes les données associées.
+        
+        Args:
+            content_ids: Liste des IDs des contenus à supprimer.
+            
+        Returns:
+            True si la suppression a réussi, False sinon.
+        """
+        return self._permanently_delete_posts(content_ids)
     
     def show_settings(self):
         """Afficher et modifier les paramètres de l'application."""
